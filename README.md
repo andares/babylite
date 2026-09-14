@@ -26,15 +26,16 @@ npx @andares/babylite install            # 或走 npm
 ```text
 SKILL.md                      # skill 入口：检索协议 + 高频陷阱表
 AGENTS.md                     # 项目说明与维护流程
-package.json                  # npm 包 @andares/babylite（发布用）
+package.json                  # npm 包 @andares/babylite（发布用，pnpm 管理）
+pnpm-lock.yaml                # pnpm 锁文件
 bin/babylite.mjs              # 安装器 CLI：把 skill 复制进 agent 的 skill 目录
 references/
 ├── INDEX.md                  # 第 1 跳：效果词（中/英）→ API 范围 + 主题文件 + 原文档 URL
 ├── README.md                 # 速查使用说明、铁律、数据来源
 ├── topics/                   # 第 2 跳：13 个主题（API 范围表 + 最小示例）
 └── raw-doc/                  # 第 3 跳：官方 61 页完整 markdown 快照（可 grep）
-scripts/verify-docs.mjs       # 链接、路径与 npm 包一致性校验
-scripts/publish.mjs           # 一键发布（校验 → bump → commit+tag → npm publish → push）
+scripts/verify-docs.mjs       # 链接、路径与发布包一致性校验
+scripts/publish.mjs           # 一键发布（校验 → bump → commit+tag → pnpm publish → push）
 ```
 
 三层资料的分工：**`INDEX.md` 回答"用哪个 API"**，**`topics/` 回答"怎么写"**，
@@ -115,15 +116,21 @@ grep -rn "setThinInstances" references/raw-doc/
 - 与线上文档冲突时**以官方文档为准**；刷新流程见 `AGENTS.md`，改完跑 `node scripts/verify-docs.mjs` 校验。
 - 官方文档更新快于本快照，欢迎提 issue 提醒刷新。
 
-## 发布（维护者）
+## 开发与发布（维护者）
+
+本仓库**只用 pnpm** 管理自己的开发流程（`packageManager` 已固定，锁文件为 `pnpm-lock.yaml`）；
+包本身仍然发布到 npm registry。用户侧的安装命令与这里无关。
 
 ```bash
-npm run release patch     # 1.0.0 → 1.0.1；也支持 minor / major
-npm run release patch -- --dry-run    # 只打印计划
-npm run release patch -- --no-push    # 发 npm 但不 push / 不建 GitHub Release
+pnpm install                     # 无依赖，仅用于同步锁文件
+pnpm verify                      # 跑校验（等价 node scripts/verify-docs.mjs）
+pnpm release patch               # 1.0.0 → 1.0.1；也支持 minor / major
+pnpm release patch --dry-run     # 只打印计划
+pnpm release patch --no-push     # 发布但不 push / 不建 GitHub Release
+pnpm tag-current                 # 仅给当前版本打本地 tag
 ```
 
-一条命令完成：校验 → bump `package.json` 与 `SKILL.md` 版本 → commit + tag → `npm publish` →
+一条命令完成：校验 → bump `package.json` 与 `SKILL.md` 版本 → commit + tag → `pnpm publish` →
 push 分支与 tag → 建 GitHub Release（需 `GITHUB_TOKEN`，缺省只提示）。发布后 skills.sh 会随仓库同步。
 细节与回滚见 `AGENTS.md`。
 

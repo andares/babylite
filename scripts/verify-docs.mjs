@@ -12,8 +12,9 @@
  *  4. Every relative Markdown link resolves inside the repository.
  *  5. The retired `babylite/...` prefix never comes back.
  *  6. The snapshot date stays consistent between SKILL.md and references/README.md.
- *  7. The npm package stays consistent with the bundle: name, the version shared
- *     with `SKILL.md` metadata, `files` coverage, and existing executable bins.
+ *  7. The published package stays consistent with the bundle: name, the version
+ *     shared with `SKILL.md` metadata, `files` coverage, executable bins, and
+ *     the pnpm-only toolchain (packageManager field + lockfile).
  *
  * Usage: node scripts/verify-docs.mjs
  */
@@ -166,12 +167,12 @@ if (snapshot === undefined) {
   fail('snapshot-date', `references/README.md does not mention the snapshot date ${snapshot}`);
 }
 
-// ------------------------------------------- 7. npm package / skill consistency
+// ---------------------------------------- 7. published package / skill consistency
 
 // The published tarball is a second view of the same bundle, so a mismatch here
-// means `npm i @andares/babylite` ships something different from what the repo
-// verifies. `metadata.version` in SKILL.md is kept equal to package.json by the
-// release script; enforcing it here catches a hand-edited bump.
+// means an installed `@andares/babylite` ships something different from what the
+// repo verifies. `metadata.version` in SKILL.md is kept equal to package.json by
+// the release script; enforcing it here catches a hand-edited bump.
 const pkgPath = join(ROOT, 'package.json');
 if (!existsSync(pkgPath)) {
   fail('package', 'package.json is missing');
@@ -219,6 +220,17 @@ if (!existsSync(pkgPath)) {
       else if ((statSync(binPath).mode & 0o111) === 0) {
         fail('package', `bin "${name}" (${target}) is not executable`);
       }
+    }
+    // pnpm-only toolchain: the pinned manager and its lockfile must both be
+    // present, so a stray npm install cannot reintroduce a second lockfile.
+    if (!/^pnpm@\d+\.\d+\.\d+$/.test(pkg.packageManager ?? '')) {
+      fail('package', `packageManager must pin pnpm, got ${JSON.stringify(pkg.packageManager)}`);
+    }
+    if (!existsSync(join(ROOT, 'pnpm-lock.yaml'))) {
+      fail('package', 'pnpm-lock.yaml is missing (run `pnpm install`)');
+    }
+    if (existsSync(join(ROOT, 'package-lock.json')) || existsSync(join(ROOT, 'yarn.lock'))) {
+      fail('package', 'a foreign lockfile (package-lock.json / yarn.lock) is present');
     }
   }
 }

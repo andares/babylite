@@ -1,14 +1,19 @@
 #!/usr/bin/env node
 /**
- * One-command npm release for @andares/babylite.
+ * One-command release for @andares/babylite.
  *
- *   npm run release patch   # 1.0.0 → 1.0.1
- *   npm run release minor   # 1.0.0 → 1.1.0   (patch zeroed)
- *   npm run release major   # 1.0.0 → 2.0.0   (minor + patch zeroed)
+ * This repository uses **pnpm only** for its own tooling — every command below
+ * is the pnpm form (see AGENTS.md). The package is still *published to the npm
+ * registry*; "pnpm" is the package manager, "npm" is the registry. End-user
+ * install snippets elsewhere in the repo keep their `npx` form on purpose.
+ *
+ *   pnpm release patch   # 1.0.0 → 1.0.1
+ *   pnpm release minor   # 1.0.0 → 1.1.0   (patch zeroed)
+ *   pnpm release major   # 1.0.0 → 2.0.0   (minor + patch zeroed)
  *
  * Exactly one of `major | minor | patch` is required. A higher-level bump
  * zeroes every lower level. Flags: `--dry-run` (plan only), `--no-push`
- * (publish to npm but skip the GitHub push/release step).
+ * (publish to the registry but skip the GitHub push/release step).
  *
  * Flow:
  *   validate args → warn on dirty git tree (non-blocking)
@@ -16,22 +21,27 @@
  *   → bump package.json AND SKILL.md metadata.version (they must stay equal)
  *   → git commit `chore: release vX.Y.Z` + tag `vX.Y.Z`
  *     (via scripts/tag-current.mjs — skips if the tag already exists)
- *   → `npm publish` (`prepublishOnly` re-runs verify-docs as the publish gate)
- *   → 仅在 npm 成功后：`git push origin <branch> --tags` + 用 GITHUB_TOKEN 创建
+ *   → `pnpm publish --no-git-checks` (`prepublishOnly` re-runs verify-docs as
+ *     the publish gate)
+ *   → 仅在发布成功后：`git push origin <branch> --tags` + 用 GITHUB_TOKEN 创建
  *     GitHub Release（best-effort；未设 token / 已存在 / 失败都只警告不中止）。
  *
- * Why both an npm release and a git push: npm is the versioned artifact, while
- * skills.sh indexes the **public GitHub repository** and needs the bumped
- * `SKILL.md` on the default branch to serve `npx skills add andares/babylite`.
+ * Why both a registry release and a git push: the registry keeps the versioned
+ * artifact, while skills.sh indexes the **public GitHub repository** and needs
+ * the bumped `SKILL.md` on the default branch to serve
+ * `npx skills add andares/babylite`.
  *
  * Notes:
- *  - Git commit + tag are part of the release. `npm publish` is the only step
+ *  - Git commit + tag are part of the release. `pnpm publish` is the only step
  *    that touches the network; a failure there leaves the version bumped and
  *    tagged, with the rollback printed below.
+ *  - `--no-git-checks` is passed because unrelated uncommitted work in the tree
+ *    is warned about, not treated as fatal; the version-bump commit is staged
+ *    explicitly.
  *  - The published tarball ships `SKILL.md`, `AGENTS.md`, `references/`, and
  *    `bin/` (package.json "files"); `scripts/` is never published.
  *  - GitHub Release 需要 fine-grained token（Contents: write），存于
- *    GITHUB_TOKEN 环境变量；创建失败不影响 npm 已发布的结果。
+ *    GITHUB_TOKEN 环境变量；创建失败不影响已发布的 npm 包。
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -53,19 +63,24 @@ const C = {
   red: '\x1b[31m',
 };
 
-const args = process.argv.slice(2);
+// pnpm forwards a literal `--` through to the script (npm strips it), so drop it
+// and accept both `pnpm release patch --dry-run` and `... patch -- --dry-run`.
+const args = process.argv.slice(2).filter((a) => a !== '--');
 const flags = args.filter((a) => a.startsWith('--'));
 const positional = args.filter((a) => !a.startsWith('--'));
 const dryRun = flags.includes('--dry-run');
 const skipPush = flags.includes('--no-push');
+const forcePublish = flags.includes('--force-publish');
 
-const UNKNOWN = flags.filter((f) => f !== '--dry-run' && f !== '--no-push');
+const KNOWN = ['--dry-run', '--no-push', '--force-publish'];
+const UNKNOWN = flags.filter((f) => !KNOWN.includes(f));
 if (!BUMPS.includes(positional[0]) || positional.length !== 1 || UNKNOWN.length > 0) {
   console.error(
-    `${C.red}${C.bold}Usage: npm run release <${BUMPS.join('|')}> [--dry-run] [--no-push]${C.reset}` +
-      `\n  Bump the package version and publish to npm (requires exactly one bump argument).` +
-      `\n  --dry-run  preview the plan without changing anything.` +
-      `\n  --no-push  publish to npm but skip git push and the GitHub Release.`,
+    `${C.red}${C.bold}Usage: pnpm release <${BUMPS.join('|')}> [--dry-run] [--no-push] [--force-publish]${C.reset}` +
+      `\n  Bump the package version and publish to the npm registry (requires exactly one bump argument).` +
+      `\n  --dry-run        preview the plan without changing anything.` +
+      `\n  --no-push        publish to the registry but skip git push and the GitHub Release.` +
+      `\n  --force-publish  publish even when origin does not match package.json repository.url.`,
   );
   process.exit(1);
 }
@@ -111,7 +126,7 @@ function run(cmd, cmdArgs, opts = {}) {
   return res;
 }
 
-const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
 const git = process.platform === 'win32' ? 'git.exe' : 'git';
 
 function tagExists(tag) {
@@ -130,13 +145,13 @@ const branch =
 
 if (dryRun) {
   console.log(`\n${C.dim}--dry-run -- nothing changed. Would run:${C.reset}`);
-  console.log(`  1. node scripts/verify-docs.mjs + npm pack --dry-run`);
+  console.log(`  1. node scripts/verify-docs.mjs + pnpm pack --dry-run`);
   console.log(`  2. bump package.json + SKILL.md metadata.version → ${next}`);
   console.log(
     `  3. git commit -m "chore: release v${next}" + tag-current` +
       (tagExists(`v${next}`) ? `（tag v${next} 已存在，跳过打 tag）` : `（git tag v${next}）`),
   );
-  console.log(`  4. npm publish`);
+  console.log(`  4. pnpm publish --no-git-checks`);
   if (skipPush) {
     console.log(`  5. --no-push：跳过 git push 与 GitHub Release`);
   } else {
@@ -146,6 +161,34 @@ if (dryRun) {
     );
   }
   process.exit(0);
+}
+
+// Publishing is irreversible: a version number can never be reused. Refuse to
+// publish from a checkout that cannot be the canonical one — the remote must
+// exist and agree with package.json repository.url — so accidentally running
+// this in a throwaway clone or a copy cannot burn a version on the registry.
+// `--force-publish` overrides for mirrors and forks.
+if (!forcePublish) {
+  const remote = run(git, ['remote', 'get-url', 'origin'], { stdio: 'pipe', allowFailure: true });
+  const remoteUrl = remote.stdout.toString().trim();
+  const remoteRepo = remoteUrl
+    .match(/(?:github\.com[/:])([^/]+\/[^/\s]+?)(?:\.git)?$/)?.[1]
+    ?.toLowerCase();
+  if (remote.status !== 0 || remoteRepo === undefined) {
+    console.error(
+      `${C.red}Refusing to publish: no usable \`origin\` remote in ${ROOT}.${C.reset}` +
+        `\n  A release must run in the canonical checkout of ${ghRepo}.` +
+        `\n  Pass --force-publish only if you really mean to publish from here.`,
+    );
+    process.exit(1);
+  }
+  if (remoteRepo !== ghRepo.toLowerCase()) {
+    console.error(
+      `${C.red}Refusing to publish: origin is ${remoteRepo} but package.json says ${ghRepo}.${C.reset}` +
+        `\n  Pass --force-publish only if you really mean to publish from here.`,
+    );
+    process.exit(1);
+  }
 }
 
 // Dirty-tree warning (non-blocking; the release commit stages its own files).
@@ -164,17 +207,21 @@ step('verify docs bundle');
 run(process.execPath, [join(ROOT, 'scripts', 'verify-docs.mjs')]);
 
 step('inspect publish tarball');
-const pack = run(npm, ['pack', '--dry-run', '--json'], { allowFailure: true, stdio: 'pipe' });
+// `pnpm pack --json` prints one object ({ name, version, files }); npm prints an
+// array of them. Accept either shape so a stray npm/pnpm switch cannot silently
+// skip the check.
+const pack = run(pnpm, ['pack', '--dry-run', '--json'], { allowFailure: true, stdio: 'pipe' });
 let packList;
 try {
-  packList = JSON.parse(pack.stdout.toString())[0]?.files?.map((f) => f.path);
+  const parsed = JSON.parse(pack.stdout.toString());
+  packList = (Array.isArray(parsed) ? parsed[0] : parsed)?.files?.map((f) => f.path);
 } catch {
-  packList = undefined; // npm printed a non-JSON diagnostic (unwritable cache, etc.)
+  packList = undefined; // a non-JSON diagnostic was printed instead
 }
 if (pack.status !== 0 || packList === undefined) {
-  // npm may be unavailable or its cache unwritable; verify-docs already checked
+  // pnpm may be unavailable or its store unwritable; verify-docs already checked
   // that "files" covers the bundle, so this is a warning rather than a gate.
-  console.warn(`${C.yellow}npm pack --dry-run 无法执行，跳过 tarball 检查${C.reset}`);
+  console.warn(`${C.yellow}pnpm pack --dry-run 无法执行，跳过 tarball 检查${C.reset}`);
 } else {
   for (const required of ['SKILL.md', 'references/INDEX.md', 'bin/babylite.mjs']) {
     if (!packList.includes(required)) {
@@ -205,8 +252,8 @@ run(git, ['commit', '-m', `chore: release v${next}`]);
 run(process.execPath, [join(ROOT, 'scripts', 'tag-current.mjs')]);
 
 // 4. Publish (prepublishOnly re-runs verify-docs as the publish gate).
-step('npm publish');
-const publish = run(npm, ['publish'], { allowFailure: true });
+step('pnpm publish');
+const publish = run(pnpm, ['publish', '--no-git-checks'], { allowFailure: true });
 if (publish.status !== 0) {
   console.error(
     `${C.red}Publish failed. The version bump is already committed + tagged as v${next}.` +
@@ -217,7 +264,7 @@ if (publish.status !== 0) {
 
 // 5. GitHub: push branch + tags, then create the Release. skills.sh indexes the
 //    public repo, so a failed push also means the new version is not discoverable
-//    there — reported loudly but not fatal (npm already succeeded).
+//    there — reported loudly but not fatal (the registry publish already succeeded).
 if (skipPush) {
   step('skip GitHub push (--no-push)');
   console.log(`${C.yellow}已跳过 git push 与 GitHub Release；skills.sh 只有在推送后才会看到新版本。${C.reset}`);
@@ -233,7 +280,7 @@ if (skipPush) {
   if (!process.env.GITHUB_TOKEN) {
     console.warn(
       `${C.yellow}未设置 GITHUB_TOKEN — 跳过 GitHub Release 创建。` +
-        `npm 已发布 v${next}，可稍后手动创建 release。${C.reset}`,
+        `npm registry 已发布 v${next}，可稍后手动创建 release。${C.reset}`,
     );
   } else {
     const rel = run(
@@ -289,7 +336,7 @@ if (skipPush) {
       } else {
         console.warn(
           `${C.yellow}GitHub Release 创建失败（POST HTTP ${code || '?'}，按 tag 查询 ${chkCode || '?'}）。` +
-            `npm 已发布 v${next}，可稍后手动创建。${C.reset}`,
+            `npm registry 已发布 v${next}，可稍后手动创建。${C.reset}`,
         );
       }
     }
@@ -298,7 +345,7 @@ if (skipPush) {
 
 console.log(
   `\n${C.green}${C.bold}✅ Published v${current} → v${next}${C.reset}` +
-    `\n${C.dim}Tag: v${next} · commit: chore: release v${next} · npm` +
+    `\n${C.dim}Tag: v${next} · commit: chore: release v${next} · npm registry` +
     (skipPush ? '' : ' · GitHub Release') +
     `\nskills.sh（无需注册/提交）：确认 https://github.com/${ghRepo} 为公开仓库后，` +
     `用户即可 npx skills add ${ghRepo}${C.reset}`,

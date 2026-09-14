@@ -16,6 +16,7 @@
   "publishConfig": {
     "access": "public"
   },
+  "packageManager": "pnpm@12.3.4",
   "bin": {
     "babylite": "./bin/babylite.mjs"
   },

@@ -2,8 +2,8 @@
 /**
  * 给当前 package.json 的版本号打 git tag（vX.Y.Z）。
  *
- *   npm run tag-current             # 打 tag：v{当前版本}，已存在则跳过
- *   npm run tag-current -- --dry-run   # 只预览，不修改任何东西
+ *   pnpm tag-current                  # 打 tag：v{当前版本}，已存在则跳过
+ *   pnpm tag-current --dry-run        # 只预览，不修改任何东西
  *
  * 行为：
  *  - tag 名 = `v${package.json 的 version}`，打在当前 HEAD 上
