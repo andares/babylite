@@ -9,8 +9,7 @@
 **不需要联网检索，也不需要凭记忆猜签名**。
 
 ```bash
-npx skills add andares/babylite          # 推荐：装到你的 agent（Claude Code / Cursor / Codex / DSH…）
-npx @andares/babylite install            # 或走 npm
+npx @andares/babylite install     # 推荐：装一次到共享目录 ~/.agents/skills/，Pi / DSH / Codex / Cursor… 都能发现
 ```
 
 ## 为什么需要它
@@ -47,48 +46,55 @@ scripts/publish.mjs           # 一键发布（校验 → bump → commit+tag �
 
 ## 安装
 
-skill 目录包要求 `SKILL.md` 位于 skill 目录根部，仓库根即 skill 目录。
+本 skill 就是一个目录包（`SKILL.md` + `references/`）。**装一次到共享 skill 目录即可，不需要按 agent 分别安装、也不需要 `-a` 指定。**
 
-**方式一：skills CLI（推荐）** — 从 [skills.sh](https://skills.sh/andares/babylite) 安装，自动识别你装了哪些 agent 并写入对应目录：
-
-```bash
-npx skills add andares/babylite                 # 交互式：选 agent 与作用范围
-npx skills add andares/babylite -g -a claude-code -y   # 全局装到 Claude Code，非交互
-npx skills add andares/babylite --list          # 只看仓库里有哪些 skill，不安装
-```
-
-**方式二：npm** — npm 装进 `node_modules`，agent 不会自动扫描，所以包内自带安装器把内容复制到 skill 目录：
+### 推荐：装到共享目录
 
 ```bash
-npx @andares/babylite install              # → ~/.agents/skills/babylite
-npx @andares/babylite install --project    # → ./.agents/skills/babylite
-npx @andares/babylite install --to <dir>   # → 指定目录
-npx @andares/babylite paths                # 查看各候选 skill 根目录
+npx @andares/babylite install            # → ~/.agents/skills/babylite（所有项目可用）
+npx @andares/babylite install --project  # → ./.agents/skills/babylite（仅当前项目）
 ```
 
-安装器只写目标目录、不执行包内任何脚本；目标目录非空且不是本 skill 的既有安装时会拒绝，需 `--force`。
+`.agents/skills/` 是当前生态正在收敛的共享目录，装一次这些 agent 就能自动发现：
 
-**方式三：手动**（不装任何工具，适合固定版本或改文档后即时生效）：
+- **全局** `~/.agents/skills/`：Pi、DSH、Zed、Cline、Dexto、Kimi Code CLI、Loaf、Sarvam Code、Warp
+- **项目级** `.agents/skills/` 覆盖面更广，另有 Codex、Cursor、GitHub Copilot、Gemini CLI、OpenCode、Kilo Code、Antigravity、Droid 等（20+ 个 agent）
+- Pi 另外也接受 `~/.pi/agent/skills/` 与 `<项目>/.pi/skills/`，DSH 另外也接受 `~/.dsh/skills/`；一般不必用到
+
+安装器只往目标目录写 `SKILL.md` + `references/`，**不执行包内脚本、不联网**。目标是本 skill 的既有安装会原地更新；是别人的目录则拒绝，需 `--force`。
+
+### 不在共享约定里的 agent
+
+`skills` CLI 会**自动探测**你装了哪些 agent，并按各自专有目录铺软链——一份正本 + 多条软链，不是重复拷贝（`--copy` 才真拷贝）：
+
+```bash
+npx skills add andares/babylite        # 自动探测；交互确认装到哪些 agent
+npx skills add andares/babylite --all  # 所有 skill → 所有 agent，不提示
+```
+
+Claude Code（`~/.claude/skills/`）等用它。DSH 不在该 CLI 的 agent 列表内，所以 DSH 走上一条命令或 `/skill install github:andares/babylite`。
+
+> ⚠️ 别用 `-g -a universal`：该 CLI 把 `universal` 的**全局**路径映射到 `~/.config/agents/skills/`，**不在共享约定上**，Pi 与 DSH 都不会读它。（它的项目级路径 `.agents/skills/` 才是对的。）
+
+### 手动安装 / 想固定版本
 
 ```bash
 git clone git@github.com:andares/babylite.git ~/.agents/skills/babylite
-# 或从已有克隆软链过去（git pull 后立即生效）
+
+# 或从已有克隆软链过去，git pull 后即时生效
 ln -s /path/to/babylite ~/.agents/skills/babylite
 ```
 
-按 agent 选择根目录：
+### 目录对照
 
-| 作用范围 | 路径 |
-| --- | --- |
-| 单个项目 | `<项目根>/.agents/skills/babylite/` |
-| 单个项目（DSH） | `<项目根>/.dsh/skills/babylite/` |
-| 当前用户 | `~/.agents/skills/babylite/` |
-| 当前用户（DSH） | `~/.dsh/skills/babylite/` |
-| Claude Code / Cursor 等 | `~/.claude/skills/babylite/`、`~/.cursor/skills/babylite/` |
+| 范围 | 路径 | 谁读 |
+| --- | --- | --- |
+| 全局（推荐） | `~/.agents/skills/babylite/` | Pi、DSH、Zed、Cline、Warp… |
+| 当前项目（推荐） | `<项目根>/.agents/skills/babylite/` | 上述 + Codex、Cursor、Copilot、Gemini CLI、OpenCode… |
+| DSH 专有 | `~/.dsh/skills/`、`<项目根>/.dsh/skills/` | 仅 DSH（一般不必用） |
+| 各 agent 专有 | `~/.claude/skills/`、`~/.cursor/skills/`… | 交给 `npx skills add` 自动处理 |
 
-DeepSeek harness 也可用自带命令 `/skill install github:andares/babylite`。
-
-安装后 skill 列表里应出现 `babylite`；若没出现，刷新/重启会话（本 skill 是纯文档包，无需 `trust` 就能读取）。
+安装后 skill 列表里应出现 `babylite`；没出现就刷新/重启会话（本 skill 是纯文档包，无需 `trust` 即可读取）。
 
 ## 使用
 

@@ -30,6 +30,11 @@
 - 交付形态：skill 目录包 `<name>/SKILL.md`，仓库根即 skill 目录，`name: babylite`。
 - 分发渠道：**公开 GitHub 仓库**（skills.sh 直接索引，`npx skills add andares/babylite`）
   与 **npm 包 `@andares/babylite`**（含安装器 CLI，`npx @andares/babylite install`）。
+- **共享目录事实（别再搞错）**：`~/.agents/skills/`（全局）与 `.agents/skills/`（项目级）是生态正在收敛的
+  共享 skill 目录，**Pi 与 DSH 都读它**。所以推荐装一次到 `~/.agents/skills/`；不需要按 agent 分别安装，
+  也不需要写 `-a`（`skills` CLI 默认自动探测已装 agent）。该 CLI 只对**不在**此约定里的 agent 才需要用到
+  （如 Claude Code 的 `~/.claude/skills/`）；注意它的 `universal` **全局**路径是 `~/.config/agents/skills/`，
+  不在这套约定上。
 - 目标使用者：在被开发项目中写 Babylon Lite 代码的 agent（不是本仓库的开发工具）。
 - 不提供：`@babylonjs/lite` 的源码、可运行示例工程。本仓库**只有文档 + 一个安装器**。
 
