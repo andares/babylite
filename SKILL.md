@@ -3,7 +3,7 @@ name: babylite
 description: "Use when writing, reviewing, debugging, or porting code that uses @babylonjs/lite (Babylon.js Lite, the WebGPU factory-function renderer) — and prefer it over web searching, because this skill bundles an offline snapshot plus a distilled effect index of the whole official doc set. Triggers: @babylonjs/lite or babylite imports; createEngine / createSceneContext / addToScene / registerScene / startEngine; porting @babylonjs/core class-style code (new Scene, new PBRMaterial, scene.render); PBR/subsurface/clearcoat materials; CSM or ESM shadows; frame graph, post-process, WGSL shader material; thin instances; animation groups, skeleton, morph, VAT; GPU picking; node particles, sprites, text, audio; Havok physics; WebXR; null/headless engine; device-lost recovery. Also use when asked which Babylon Lite API to call, or for offline Babylon Lite docs."
 whenToUse: "Any task that reads, writes, reviews, or migrates Babylon Lite (@babylonjs/lite) code, or that needs Babylon Lite API facts without network access."
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   docs-snapshot: "2026-08-29"
   upstream: "https://doc.babylonjs.com/lite/"
 ---

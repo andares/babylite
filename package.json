@@ -1,6 +1,6 @@
 {
   "name": "@andares/babylite",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Agent skill: offline API reference for @babylonjs/lite (Babylon.js Lite) — bundles the official docs snapshot plus an effect-indexed distilled quick reference so agents can look up Babylon Lite APIs without web searching.",
   "type": "module",
   "license": "MIT",
