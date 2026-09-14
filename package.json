@@ -1,0 +1,50 @@
+{
+  "name": "@andares/babylite",
+  "version": "1.0.0",
+  "description": "Agent skill: offline API reference for @babylonjs/lite (Babylon.js Lite) — bundles the official docs snapshot plus an effect-indexed distilled quick reference so agents can look up Babylon Lite APIs without web searching.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Andares Cui",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andares/babylite.git"
+  },
+  "homepage": "https://github.com/andares/babylite#readme",
+  "bugs": {
+    "url": "https://github.com/andares/babylite/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "babylite": "./bin/babylite.mjs"
+  },
+  "files": [
+    "SKILL.md",
+    "AGENTS.md",
+    "references",
+    "bin"
+  ],
+  "keywords": [
+    "agent-skill",
+    "skill",
+    "claude-code",
+    "codex",
+    "babylonjs",
+    "babylon-lite",
+    "webgpu",
+    "3d",
+    "rendering",
+    "api-reference",
+    "offline-docs"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "verify": "node ./scripts/verify-docs.mjs",
+    "prepublishOnly": "node ./scripts/verify-docs.mjs",
+    "release": "node ./scripts/publish.mjs",
+    "tag-current": "node ./scripts/tag-current.mjs"
+  }
+}

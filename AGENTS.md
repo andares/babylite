@@ -8,8 +8,10 @@
 让 agent 在开发基于 `@babylonjs/lite` 的项目时，能直接从本仓库内的文档拿到 API 事实，**不必联网检索、也不靠记忆**。
 
 - 交付形态：skill 目录包 `<name>/SKILL.md`，仓库根即 skill 目录，`name: babylite`。
+- 分发渠道：**公开 GitHub 仓库**（skills.sh 直接索引，`npx skills add andares/babylite`）
+  与 **npm 包 `@andares/babylite`**（含安装器 CLI，`npx @andares/babylite install`）。
 - 目标使用者：在被开发项目中写 Babylon Lite 代码的 agent（不是本仓库的开发工具）。
-- 不提供：`@babylonjs/lite` 的源码、可运行示例工程、npm 包。本仓库**只有文档**。
+- 不提供：`@babylonjs/lite` 的源码、可运行示例工程。本仓库**只有文档 + 一个安装器**。
 
 Babylon Lite 是 Babylon.js 的 WebGPU 原生渲染器，API 形态是**工厂函数 + 纯数据实体**，
 与 `@babylonjs/core` 的类式 API 完全不同——这正是需要一个专门速查 skill 的原因。
@@ -22,14 +24,20 @@ Babylon Lite 是 Babylon.js 的 WebGPU 原生渲染器，API 形态是**工厂�
 ├── AGENTS.md                 # 本文件：项目说明与维护流程
 ├── README.md                 # 面向人的介绍与安装方式
 ├── LICENSE
-└── references/               # 全部资料，随 skill 一起分发
-    ├── INDEX.md              # 第 1 跳：效果词（中/英）→ API 范围 + 主题文件 + 原文档 URL
-    ├── README.md             # 速查自身的使用说明、铁律、数据来源
-    ├── topics/               # 第 2 跳：13 个主题，含 API 范围表 + 最小示例 + 源页清单
-    │   └── NN-*.md
-    └── raw-doc/              # 第 3 跳：官方 61 页的完整 markdown 快照（可 grep），另含 _nav-index.md
-        ├── 0N-*.md
-        └── architecture/NN-*.md
+├── package.json              # npm 包 @andares/babylite（发布与版本，见约定 8–9）
+├── bin/babylite.mjs          # 安装器 CLI：把 skill 复制进 agent 的 skill 目录
+├── references/               # 全部资料，随 skill 一起分发
+│   ├── INDEX.md              # 第 1 跳：效果词（中/英）→ API 范围 + 主题文件 + 原文档 URL
+│   ├── README.md             # 速查自身的使用说明、铁律、数据来源
+│   ├── topics/               # 第 2 跳：13 个主题，含 API 范围表 + 最小示例 + 源页清单
+│   │   └── NN-*.md
+│   └── raw-doc/              # 第 3 跳：官方 61 页的完整 markdown 快照（可 grep），另含 _nav-index.md
+│       ├── 0N-*.md
+│       └── architecture/NN-*.md
+└── scripts/
+    ├── verify-docs.mjs       # 校验：链接、路径、包一致性
+    ├── publish.mjs           # 一键发布：校验 → bump → commit+tag → npm publish → push
+    └── tag-current.mjs       # 给当前版本打本地 tag（已存在则跳过）
 ```
 
 `references/topics/` 与 `references/raw-doc/` 的区别：
@@ -50,6 +58,12 @@ Babylon Lite 是 Babylon.js 的 WebGPU 原生渲染器，API 形态是**工厂�
    凡写入本仓库的 API 事实，必须能在 `raw-doc` 中找到出处。
 7. **SKILL.md 的 frontmatter 必须保持有效**：`name` 为 kebab-case（当前 `babylite`），`description` 面向触发匹配、
    前 200 字符内出现最关键触发词。frontmatter 解析失败会导致整个 skill 被静默丢弃。
+8. **版本号只有一个事实来源的两个副本**：`package.json` 的 `version` 与 `SKILL.md` 的 `metadata.version` 必须相等。
+   改版本请走 `npm run release`（它同时写两处），不要手改其一；`verify-docs.mjs` 会拦截不一致。
+9. **`package.json` 的 `files` 必须覆盖 `SKILL.md` 与 `references`**，否则 npm 装出来的包缺文档。
+   `scripts/` 与 `bin/` 之外不要新增需要随包分发的顶层目录而不更新 `files`。
+10. **安装器只做复制，不做别的**：`bin/babylite.mjs` 只往目标 skill 目录写 `SKILL.md` + `references/`，
+    不得执行包内脚本、不得联网、不得越出目标目录；覆盖他人目录必须要求 `--force`。
 
 ## 作为使用方（在被开发项目中）
 
@@ -78,7 +92,40 @@ node scripts/verify-docs.mjs
 
 校验内容：`SKILL.md` frontmatter 必需字段与 kebab-case 名称；`INDEX.md` 中所有 `topics/*.md` 链接存在；
 所有 topic 头部列出的 `references/raw-doc/**` 路径存在；全仓库 markdown 内部链接可解析；
-文档中不存在 `babylite/` 前缀或指向仓库外的相对路径；`raw-doc` 页数与 `_nav-index.md` 记录一致。
+文档中不存在 `babylite/` 前缀或指向仓库外的相对路径；`raw-doc` 页数与 `_nav-index.md` 记录一致；
+`package.json` 存在且名称/版本/`files`/`bin` 与 skill 包一致（约定 8–10）。
+
+### 发布与分发
+
+```bash
+npm run release patch                  # 1.0.0 → 1.0.1（也支持 minor / major）
+npm run release patch -- --dry-run     # 只打印计划，不改任何东西
+npm run release patch -- --no-push     # 发 npm，但不 push、不建 GitHub Release
+npm run tag-current                    # 仅给当前版本打本地 tag（已存在则跳过）
+```
+
+`scripts/publish.mjs` 的步骤：校验（`verify-docs.mjs` + `npm pack --dry-run` 检查 tarball 内容）
+→ 同时 bump `package.json` 与 `SKILL.md` 的 `metadata.version` → `chore: release vX.Y.Z` commit
+→ `tag-current.mjs` 打 `vX.Y.Z` → `npm publish`（`prepublishOnly` 会再跑一次校验）
+→ 仅在 npm 成功后 push 分支与 tag，并用 `GITHUB_TOKEN` 建 GitHub Release（best-effort，失败只警告）。
+
+发布失败回滚：`git tag -d vX.Y.Z && git reset --hard HEAD~1`。
+
+**两个渠道的关系**：
+
+| 渠道 | 来源 | 安装方式 | 说明 |
+| --- | --- | --- | --- |
+| skills.sh | 公开 GitHub 仓库 | `npx skills add andares/babylite` | **无需注册、无需提交、无需审核**：skills.sh 索引公开 GitHub 仓库中的 `SKILL.md`（仓库根即可）。所以发布 = push 到公开仓库 |
+| npm | package.json | `npx @andares/babylite install` | npm 装到 `node_modules/`，agent 不扫描该目录，故包内 `bin` 安装器负责复制进 skill 目录 |
+
+skills.sh 注意点：
+
+- 榜单按 `skills` CLI 的匿名安装遥测排序；**仓库要先被装过一次**（例如自己跑一次 `npx skills add andares/babylite`）
+  才会出现在榜单/仓库页上。
+- 可选：仓库根加 `skills.sh.json` 自定义仓库页分组；本仓库只有一个 skill，**不需要**。
+- README 里的徽章 `https://skills.sh/b/andares/babylite` 在收录后才会显示数字。
+- 若仓库转为私有，skills.sh 将不再能索引。
+- 不得提交隐藏安装脚本或凭证收集代码；`bin/babylite.mjs` 的行为约束见约定 10。
 
 ### 改动前的检查清单
 

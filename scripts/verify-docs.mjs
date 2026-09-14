@@ -12,6 +12,8 @@
  *  4. Every relative Markdown link resolves inside the repository.
  *  5. The retired `babylite/...` prefix never comes back.
  *  6. The snapshot date stays consistent between SKILL.md and references/README.md.
+ *  7. The npm package stays consistent with the bundle: name, the version shared
+ *     with `SKILL.md` metadata, `files` coverage, and existing executable bins.
  *
  * Usage: node scripts/verify-docs.mjs
  */
@@ -164,6 +166,63 @@ if (snapshot === undefined) {
   fail('snapshot-date', `references/README.md does not mention the snapshot date ${snapshot}`);
 }
 
+// ------------------------------------------- 7. npm package / skill consistency
+
+// The published tarball is a second view of the same bundle, so a mismatch here
+// means `npm i @andares/babylite` ships something different from what the repo
+// verifies. `metadata.version` in SKILL.md is kept equal to package.json by the
+// release script; enforcing it here catches a hand-edited bump.
+const pkgPath = join(ROOT, 'package.json');
+if (!existsSync(pkgPath)) {
+  fail('package', 'package.json is missing');
+} else {
+  let pkg;
+  try {
+    pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+  } catch (error) {
+    fail('package', `package.json is not valid JSON: ${error.message}`);
+  }
+  if (pkg !== undefined) {
+    if (pkg.name !== '@andares/babylite') {
+      fail('package', `package name is ${JSON.stringify(pkg.name)}, expected "@andares/babylite"`);
+    }
+    if (!/^\d+\.\d+\.\d+$/.test(pkg.version ?? '')) {
+      fail('package', `package version is not X.Y.Z: ${JSON.stringify(pkg.version)}`);
+    }
+    const skillVersion = /^\s*version:[ \t]*"?([^"\s]+)"?[ \t]*$/m.exec(skill.raw)?.[1];
+    if (skillVersion !== pkg.version) {
+      fail(
+        'package',
+        `SKILL.md metadata.version (${skillVersion ?? 'missing'}) != package.json version (${pkg.version})`,
+      );
+    }
+    if (pkg.license !== 'MIT' || !existsSync(join(ROOT, 'LICENSE'))) {
+      fail('package', 'license must be MIT and LICENSE must exist');
+    }
+    for (const field of ['description', 'repository']) {
+      if (pkg[field] === undefined) fail('package', `package.json is missing \`${field}\``);
+    }
+    // Every shipped path must exist, and the bundle must actually be shipped.
+    for (const entry of pkg.files ?? []) {
+      if (!existsSync(join(ROOT, entry))) {
+        fail('package', `package.json "files" lists missing path: ${entry}`);
+      }
+    }
+    for (const required of ['SKILL.md', 'references']) {
+      if (!(pkg.files ?? []).includes(required)) {
+        fail('package', `package.json "files" must include ${required}`);
+      }
+    }
+    for (const [name, target] of Object.entries(pkg.bin ?? {})) {
+      const binPath = join(ROOT, target);
+      if (!existsSync(binPath)) fail('package', `bin "${name}" points at missing ${target}`);
+      else if ((statSync(binPath).mode & 0o111) === 0) {
+        fail('package', `bin "${name}" (${target}) is not executable`);
+      }
+    }
+  }
+}
+
 // ---------------------------------------------------------------------- report
 
 if (failures.length > 0) {
@@ -171,4 +230,6 @@ if (failures.length > 0) {
   for (const line of failures) console.error(`  - ${line}`);
   process.exit(1);
 }
-console.log(`verify-docs: OK — ${markdownFiles.length} markdown files, all references resolve.`);
+console.log(
+  `verify-docs: OK — ${markdownFiles.length} markdown files, all references resolve, package consistent.`,
+);
