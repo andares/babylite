@@ -55,6 +55,10 @@ npx @andares/babylite install            # → ~/.agents/skills/babylite（所�
 npx @andares/babylite install --project  # → ./.agents/skills/babylite（仅当前项目）
 ```
 
+> ⚠️ **别在 babylite 仓库目录里跑 `npx @andares/babylite …`**：包名与当前项目同名，npm 会把它解析成"本地这个包"而不是从 registry 下载，转而去 `./node_modules/.bin/babylite` 找可执行文件，而它并不存在，于是报 `sh: 1: babylite: not found`（`npx --package …` 也一样）。
+> 换到任意其它目录执行即可；若你就在本仓库里，直接 `node bin/babylite.mjs install`，或用下面的软链方式。
+> 该报错是 npm 的行为，与本包无关。
+
 `.agents/skills/` 是当前生态正在收敛的共享目录，装一次这些 agent 就能自动发现：
 
 - **全局** `~/.agents/skills/`：Pi、DSH、Zed、Cline、Dexto、Kimi Code CLI、Loaf、Sarvam Code、Warp
@@ -84,6 +88,8 @@ git clone git@github.com:andares/babylite.git ~/.agents/skills/babylite
 # 或从已有克隆软链过去，git pull 后即时生效
 ln -s /path/to/babylite ~/.agents/skills/babylite
 ```
+
+**在本仓库里改了文档想立刻生效，就用软链**（不必反复重装副本）；贡献者本地推荐这一种。
 
 ### 目录对照
 
