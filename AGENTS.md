@@ -4,16 +4,19 @@
 
 > ## ⛔ 发布权：只能由仓库所有者（人类）执行
 >
-> **agent 不得执行任何发版操作**，包括 `pnpm release`、`pnpm publish`、`npm publish`、`pnpm unpublish`、
-> `npm deprecate`、`git push`、创建/删除 GitHub Release 或 tag。也不要"为了验证"在临时目录、副本、
-> 容器或 worktree 里跑这些命令——**在副本里跑同样是真的发布到公开 registry**。
+> **人类专属操作**（agent 一律不得执行，也不得"为了验证"在临时目录、副本、容器、worktree 里执行）：
 >
-> 原因：npm 的版本号一旦发布就**永久不可复用**，公开包还能被任何人下载。本仓库已经因此误发过
-> `@andares/babylite@1.0.1`（2026-09-14，由一个 agent 在 `/tmp` 副本里跑 release 脚本造成）。
+> 1. **推送**：`git push`（含 `--tags`、`--force`）、`git push --delete`、创建或删除远端 tag / 分支；
+> 2. **发布**：`pnpm release`、`pnpm publish`、`npm publish`、`pnpm unpublish`、`npm deprecate`；
+> 3. **GitHub Release**：创建、修改、删除。
 >
-> agent 可以做的：`pnpm verify`、`pnpm pack --dry-run`、`pnpm release <bump> --dry-run`、
-> 修改版本号与 `SKILL.md`、写文档、本地 commit。**push 与发布留给人类。**
-> 需要真发版时，向人类报告"已准备好，请执行 `pnpm release <bump>`"。
+> **agent 可以做的**：`pnpm verify`、`pnpm pack --dry-run`、`pnpm release <bump> --dry-run`、
+> 修改版本号与文档、**本地 `git commit`**、本地打 tag（可选）。做完本地提交后停下，
+> 把"已完成 N 个本地提交 + tag，请推送"报告给人类。
+>
+> 原因：npm 版本号一旦发布**永久不可复用**，公开包可被任何人下载；远端 push 会立刻改变
+> 所有人都能看到的状态。本仓库已经因为一个 agent 在 `/tmp` 副本里跑 release 脚本，误发了
+> `@andares/babylite@1.0.1`（2026-09-14）——**在副本里跑同样是真的发布到公开 registry**。
 >
 > 这条不只是约定，`scripts/publish.mjs` 已经做成机制：**没有交互式终端就直接拒绝执行**（agent / CI 属于这种），
 > 有终端时还要再输入一次确认。`--yes` 与 `BABYLITE_RELEASE_CONFIRM=1` 是给人类脚本化发布用的，
@@ -105,9 +108,10 @@ Babylon Lite 是 Babylon.js 的 WebGPU 原生渲染器，API 形态是**工厂�
     不得执行包内脚本、不得联网、不得越出目标目录；覆盖他人目录必须要求 `--force`。
 11. **本仓库只用 pnpm**：不要引入 `package-lock.json`/`yarn.lock`，不要用 `npm run`/`npm publish` 跑本仓库流程；
     用户侧的 `npx ...` 安装说明不在此约束内。
-12. **发版只能由人类执行**（本文件最重要的一条）：agent 不得运行 `pnpm release`、`pnpm publish`、
-    `npm publish`、`pnpm unpublish`、`git push`，也不得创建 GitHub Release 或 tag——
-    包括在临时目录、副本、容器、worktree 里"为了验证"地跑。需要发版时改为向人类报告并请求执行。
+12. **推送与发布只能由人类执行**（本文件最重要的一条）：agent 不得运行 `git push`（含 `--tags`/`--force`）、
+    创建或删除远端 tag / GitHub Release，也不得运行 `pnpm release`、`pnpm publish`、`npm publish`、
+    `pnpm unpublish`——包括在临时目录、副本、容器、worktree 里"为了验证"地跑。
+    agent 做到**本地 commit** 为止，然后向人类报告并请求推送。
     细节见文首[「发布权」](#-发布权只能由仓库所有者人类执行)一节。
 
 ## 作为使用方（在被开发项目中）
