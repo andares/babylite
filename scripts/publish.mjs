@@ -7,13 +7,21 @@
  * registry*; "pnpm" is the package manager, "npm" is the registry. End-user
  * install snippets elsewhere in the repo keep their `npx` form on purpose.
  *
- *   pnpm release patch   # 1.0.0 → 1.0.1
- *   pnpm release minor   # 1.0.0 → 1.1.0   (patch zeroed)
- *   pnpm release major   # 1.0.0 → 2.0.0   (minor + patch zeroed)
+ *   pnpm release patch   # 1.0.1 → 1.0.2
+ *   pnpm release minor   # 1.0.1 → 1.1.0   (patch zeroed)
+ *   pnpm release major   # 1.0.1 → 2.0.0   (minor + patch zeroed)
  *
  * Exactly one of `major | minor | patch` is required. A higher-level bump
  * zeroes every lower level. Flags: `--dry-run` (plan only), `--no-push`
- * (publish to the registry but skip the GitHub push/release step).
+ * (publish to the registry but skip the GitHub push/release step),
+ * `--force-publish` (ignore the origin identity check), `--yes` (skip the
+ * interactive confirmation).
+ *
+ * HUMAN-ONLY (see AGENTS.md): a published npm version can never be reused, so
+ * this script refuses to run without an interactive terminal and then asks for
+ * explicit confirmation. `--yes` or BABYLITE_RELEASE_CONFIRM=1 is only for a
+ * human who has deliberately decided to script a release — an agent must never
+ * set either.
  *
  * Flow:
  *   validate args → warn on dirty git tree (non-blocking)
@@ -46,6 +54,7 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -71,16 +80,18 @@ const positional = args.filter((a) => !a.startsWith('--'));
 const dryRun = flags.includes('--dry-run');
 const skipPush = flags.includes('--no-push');
 const forcePublish = flags.includes('--force-publish');
+const assumeYes = flags.includes('--yes');
 
-const KNOWN = ['--dry-run', '--no-push', '--force-publish'];
+const KNOWN = ['--dry-run', '--no-push', '--force-publish', '--yes'];
 const UNKNOWN = flags.filter((f) => !KNOWN.includes(f));
 if (!BUMPS.includes(positional[0]) || positional.length !== 1 || UNKNOWN.length > 0) {
   console.error(
-    `${C.red}${C.bold}Usage: pnpm release <${BUMPS.join('|')}> [--dry-run] [--no-push] [--force-publish]${C.reset}` +
+    `${C.red}${C.bold}Usage: pnpm release <${BUMPS.join('|')}> [--dry-run] [--no-push] [--force-publish] [--yes]${C.reset}` +
       `\n  Bump the package version and publish to the npm registry (requires exactly one bump argument).` +
       `\n  --dry-run        preview the plan without changing anything.` +
       `\n  --no-push        publish to the registry but skip git push and the GitHub Release.` +
-      `\n  --force-publish  publish even when origin does not match package.json repository.url.`,
+      `\n  --force-publish  publish even when origin does not match package.json repository.url.` +
+      `\n  --yes            skip the interactive confirmation (a human-only operation, see AGENTS.md).`,
   );
   process.exit(1);
 }
@@ -187,6 +198,32 @@ if (!forcePublish) {
       `${C.red}Refusing to publish: origin is ${remoteRepo} but package.json says ${ghRepo}.${C.reset}` +
         `\n  Pass --force-publish only if you really mean to publish from here.`,
     );
+    process.exit(1);
+  }
+}
+
+// Publishing is a human-only operation (see AGENTS.md): a published version can
+// never be reused, so an agent or CI job must not be able to trigger it. Refuse
+// to run without an interactive terminal; on a terminal, ask once for explicit
+// confirmation. `--yes` or BABYLITE_RELEASE_CONFIRM=1 is only for a human who
+// has deliberately decided to script the release.
+const envConfirmed = process.env.BABYLITE_RELEASE_CONFIRM === '1';
+if (!envConfirmed && !assumeYes) {
+  if (process.stdin.isTTY !== true) {
+    console.error(
+      `${C.red}Refusing to publish: no interactive terminal.${C.reset}` +
+        `\n  Releasing is reserved for the repository owner (see AGENTS.md).` +
+        `\n  If you are human and really mean to script this, set BABYLITE_RELEASE_CONFIRM=1.`,
+    );
+    process.exit(1);
+  }
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const answer = (await rl.question(`Publish ${pkg.name}@${next} to the npm registry? [y/N] `))
+    .trim()
+    .toLowerCase();
+  rl.close();
+  if (answer !== 'y' && answer !== 'yes') {
+    console.log(`${C.yellow}Aborted — nothing changed.${C.reset}`);
     process.exit(1);
   }
 }

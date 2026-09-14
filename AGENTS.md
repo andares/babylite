@@ -2,6 +2,23 @@
 
 给在本仓库工作的 agent 的项目说明。**先读完本文件再动手改任何东西。**
 
+> ## ⛔ 发布权：只能由仓库所有者（人类）执行
+>
+> **agent 不得执行任何发版操作**，包括 `pnpm release`、`pnpm publish`、`npm publish`、`pnpm unpublish`、
+> `npm deprecate`、`git push`、创建/删除 GitHub Release 或 tag。也不要"为了验证"在临时目录、副本、
+> 容器或 worktree 里跑这些命令——**在副本里跑同样是真的发布到公开 registry**。
+>
+> 原因：npm 的版本号一旦发布就**永久不可复用**，公开包还能被任何人下载。本仓库已经因此误发过
+> `@andares/babylite@1.0.1`（2026-09-14，由一个 agent 在 `/tmp` 副本里跑 release 脚本造成）。
+>
+> agent 可以做的：`pnpm verify`、`pnpm pack --dry-run`、`pnpm release <bump> --dry-run`、
+> 修改版本号与 `SKILL.md`、写文档、本地 commit。**push 与发布留给人类。**
+> 需要真发版时，向人类报告"已准备好，请执行 `pnpm release <bump>`"。
+>
+> 这条不只是约定，`scripts/publish.mjs` 已经做成机制：**没有交互式终端就直接拒绝执行**（agent / CI 属于这种），
+> 有终端时还要再输入一次确认。`--yes` 与 `BABYLITE_RELEASE_CONFIRM=1` 是给人类脚本化发布用的，
+> **agent 一律不得设置**。
+
 ## 项目是什么
 
 本仓库是**一个 agent skill**，把 Babylon Lite（`@babylonjs/lite`）的官方文档做成**离线可查**的资料包，
@@ -88,6 +105,10 @@ Babylon Lite 是 Babylon.js 的 WebGPU 原生渲染器，API 形态是**工厂�
     不得执行包内脚本、不得联网、不得越出目标目录；覆盖他人目录必须要求 `--force`。
 11. **本仓库只用 pnpm**：不要引入 `package-lock.json`/`yarn.lock`，不要用 `npm run`/`npm publish` 跑本仓库流程；
     用户侧的 `npx ...` 安装说明不在此约束内。
+12. **发版只能由人类执行**（本文件最重要的一条）：agent 不得运行 `pnpm release`、`pnpm publish`、
+    `npm publish`、`pnpm unpublish`、`git push`，也不得创建 GitHub Release 或 tag——
+    包括在临时目录、副本、容器、worktree 里"为了验证"地跑。需要发版时改为向人类报告并请求执行。
+    细节见文首[「发布权」](#-发布权只能由仓库所有者人类执行)一节。
 
 ## 作为使用方（在被开发项目中）
 
@@ -122,9 +143,12 @@ pnpm verify          # 等价 node scripts/verify-docs.mjs
 
 ### 发布与分发
 
+> ⛔ 下面这些命令**只能由仓库所有者（人类）在本机终端执行**。agent 只允许跑 `--dry-run` 形式与
+> `pnpm verify`（见文首[「发布权」](#-发布权只能由仓库所有者人类执行)）。
+
 ```bash
-pnpm release patch                  # 1.0.0 → 1.0.1（也支持 minor / major）
-pnpm release patch --dry-run        # 只打印计划，不改任何东西
+pnpm release patch                  # 1.0.1 → 1.0.2（也支持 minor / major）
+pnpm release patch --dry-run        # 只打印计划，不改任何东西（agent 可以跑）
 pnpm release patch --no-push        # 发布到 registry，但不 push、不建 GitHub Release
 pnpm tag-current                    # 仅给当前版本打本地 tag（已存在则跳过）
 ```
