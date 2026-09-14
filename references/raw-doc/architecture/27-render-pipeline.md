@@ -1,0 +1,329 @@
+---
+title: Render Pipeline
+source: https://doc.babylonjs.com/lite/architecture/27-render-pipeline/
+section: Architecture
+---
+
+[API](https://doc.babylonjs.com/lite/typedoc/)
+
+[Babylon Lite](https://doc.babylonjs.com/lite/)\|
+
+[Architecture](https://doc.babylonjs.com/lite/architecture/)\|
+
+[Render Pipeline](https://doc.babylonjs.com/lite/architecture/27-render-pipeline/)
+
+…\|
+
+[Babylon Lite](https://doc.babylonjs.com/lite/)\|
+
+[Architecture](https://doc.babylonjs.com/lite/architecture/)\|
+
+[Render Pipeline](https://doc.babylonjs.com/lite/architecture/27-render-pipeline/)
+
+[Babylon.js](https://doc.babylonjs.com/) [Babylon Lite](https://doc.babylonjs.com/lite/)
+
+Filter
+
+Filter
+
+- [Welcome](https://doc.babylonjs.com/lite/)
+
+- [Getting Started](https://doc.babylonjs.com/lite/01-getting-started/)
+
+- [Feature Comparison](https://doc.babylonjs.com/lite/02-feature-comparison/)
+
+- [Porting Guide](https://doc.babylonjs.com/lite/03-porting-guide/)
+
+- [Playground](https://doc.babylonjs.com/lite/04-playground/)
+
+- [Headless Null Engine](https://doc.babylonjs.com/lite/05-headless-null-engine/)
+
+- [Architecture](https://doc.babylonjs.com/lite/architecture/00-overview/)
+
+
+# Module: Renderable + Frame-Graph Architecture
+
+### Table Of Contents
+
+[Module: Renderable + Frame-Graph Architecture](https://doc.babylonjs.com/lite/architecture/27-render-pipeline/#module-renderable--frame-graph-architecture) [Purpose](https://doc.babylonjs.com/lite/architecture/27-render-pipeline/#purpose) [Public API Surface](https://doc.babylonjs.com/lite/architecture/27-render-pipeline/#public-api-surface) [Renderable contract (`render/renderable.ts`)](https://doc.babylonjs.com/lite/architecture/27-render-pipeline/#renderable-contract-renderrenderablets) [Frame graph (`frame-graph/`)](https://doc.babylonjs.com/lite/architecture/27-render-pipeline/#frame-graph-frame-graph) [RenderTask](https://doc.babylonjs.com/lite/architecture/27-render-pipeline/#rendertask) [Runtime Flow](https://doc.babylonjs.com/lite/architecture/27-render-pipeline/#runtime-flow) [RenderTask Buckets](https://doc.babylonjs.com/lite/architecture/27-render-pipeline/#rendertask-buckets) [Per-Pass Scene UBO](https://doc.babylonjs.com/lite/architecture/27-render-pipeline/#per-pass-scene-ubo) [Material-Owned Pipelines](https://doc.babylonjs.com/lite/architecture/27-render-pipeline/#material-owned-pipelines) [Material Views](https://doc.babylonjs.com/lite/architecture/27-render-pipeline/#material-views) [`_buildGroup` Pattern](https://doc.babylonjs.com/lite/architecture/27-render-pipeline/#_buildgroup-pattern) [Babylon.js Equivalence Map](https://doc.babylonjs.com/lite/architecture/27-render-pipeline/#babylonjs-equivalence-map) [Dependencies](https://doc.babylonjs.com/lite/architecture/27-render-pipeline/#dependencies) [File Manifest](https://doc.babylonjs.com/lite/architecture/27-render-pipeline/#file-manifest)
+
+> Package paths: `packages/babylon-lite/src/render/renderable.ts`, `packages/babylon-lite/src/frame-graph/`
+
+## Purpose
+
+The render pipeline is driven by a scene-owned frame graph. Materials still own shaders, pipelines, and bind groups; the frame graph only schedules render passes and asks material renderables to bind target-specific draw closures.
+
+This keeps the engine render loop material-agnostic while allowing the same `Renderable` to participate in multiple passes with different target signatures (swapchain, RTT, MSAA count, Y-flip).
+
+## Public API Surface
+
+### Renderable contract (`render/renderable.ts`)
+
+```typescript
+export interface DrawUpdateContext {
+    readonly targetWidth: number;
+    readonly targetHeight: number;
+    readonly _camera?: Camera | null;
+}
+
+export interface DrawBinding {
+    readonly renderable: Renderable;
+    readonly pipeline: GPURenderPipeline;
+    draw(pass: GPURenderPassEncoder | GPURenderBundleEncoder, engine: EngineContext): number;
+    update?(context: DrawUpdateContext): void;
+    _sortDistance?: number;
+}
+
+export interface Renderable {
+    readonly order: number;
+    readonly isTransparent: boolean;
+    readonly _transmissive?: boolean;
+    readonly _direct?: boolean;
+    readonly mesh?: Mesh;
+    _sortDistance?: number;
+    _worldCenter?: [number, number, number];
+    _lastMaterial?: any;
+    bind(engine: EngineContext, target: RenderTargetSignature): DrawBinding;
+}
+
+export interface PrePassRenderable {
+    execute(encoder: GPUCommandEncoder, engine: EngineContext): number;
+}
+
+export interface MeshGroupBuildResult {
+    renderables: Renderable[];
+    updater?: SceneUniformUpdater;
+    rebuildSingle: (scene: SceneContext, mesh: Mesh, materialOverride?: MaterialOrView) => Renderable;
+}
+```
+
+`Renderable.bind(engine, target)` is the key split: material modules resolve the pipeline for the pass target once and return a `DrawBinding` closure. The `RenderTask` owns the scene bind group (group 0), so renderables never set bind group 0 themselves.
+
+`DrawBinding.update(context)` is called once per frame per binding before the render pass is opened. The context contains the current pass target dimensions (`targetWidth`, `targetHeight`) and active pass camera (`_camera`) so bindings can refresh target-size-dependent UBOs or camera-sorted instance buffers without rebuilding their pipelines or bind groups. Mesh/material UBO updates that do not need this state still use this hook and version-guard their writes.
+
+### Frame graph (`frame-graph/`)
+
+```typescript
+export interface Task {
+    readonly name: string;
+    executionEnabled?: boolean;
+    readonly engine: EngineContextInternal;
+    readonly scene: SceneContextInternal;
+    _passes: Pass[];
+    record(): void;
+    execute?(): number;
+    dispose(): void;
+}
+
+export interface FrameGraph {
+    _tasks: Task[];
+    build(): void;
+    execute(): number;
+    dispose(): void;
+}
+```
+
+`createSceneContext()` eagerly creates a `FrameGraph` with one default `RenderTask` named `"scene"` that renders into the swapchain unless called with `{ defaultRenderTask: false }`. Post-process pipelines that render the scene to an offscreen source and write their final pass to the swapchain disable this default task so the scene is not drawn twice. User code can add tasks with `addTask()`, `addTaskAtStart()`, or `addTaskBefore()`.
+
+`executionEnabled` defaults to enabled. Setting it to `false` keeps the task recorded and its resources alive while `FrameGraph.execute()` skips both its task-level `execute()` hook and recorded passes for that frame.
+
+### RenderTask
+
+`RenderTask` begins a WebGPU render pass, buckets/binds renderables, writes its per-task scene UBO, draws, and ends the pass.
+
+```typescript
+export interface RenderTaskConfig {
+    name: string;
+    rt: RenderTarget;
+    clrColor?: GPUColorDict;
+    clr?: boolean;
+    depthClear?: boolean;
+    sharedRt?: boolean;
+    cam?: Camera | null;
+    cs?: boolean;
+    autoMirror?: boolean;
+}
+```
+
+Important fields:
+
+| Field | Meaning |
+| --- | --- |
+| Field<br>`rt` | Meaning<br>Concrete render target. Swapchain tasks use `resolveToSwapchain: true`; RTT tasks allocate color/depth textures. |
+| Field<br>`clr` | Meaning<br>`true`/undefined clears color; `false` loads previous color content for overlays/multi-scene composition. |
+| Field<br>`depthClear` | Meaning<br>Controls rt-owned depth independently. `true`/undefined clears depth; `false` loads existing depth. External `depth` targets keep their ownership policy. |
+| Field<br>`sharedRt` | Meaning<br>Uses a target owned and recorded by an earlier task; this task does not build or dispose `rt`/`rst`. |
+| Field<br>`cam` | Meaning<br>Per-pass camera override; defaults to `scene.camera`. |
+| Field<br>`cs` | Meaning<br>Use canvas dimensions for scene UBO aspect instead of RTT dimensions. Used when an RTT texture must be rendered with canvas aspect. |
+| Field<br>`autoMirror` | Meaning<br>Set `false` to keep an empty explicit render list instead of mirroring the scene renderables. |
+
+`RenderTask.addMesh(mesh, { material })` accepts either a source material or a `MaterialView`. The mesh is resolved at `record()` time through the source material family's `_buildGroup._rebuildSingle` closure, so explicit offscreen tasks can render the same mesh with pass-specific material features without mutating `mesh.material`.
+
+`RenderTask.enabled` defaults to `true`. Setting it to `false` skips the pass before updates, attachment loads, resolves, or draws.
+
+## Runtime Flow
+
+```text
+createSceneContext(engine)
+  -> createFrameGraph(engine, scene)
+  -> append default swapchain RenderTask unless defaultRenderTask is false
+  -> build frame graph
+
+startEngine/registerScene frame:
+  scene._update()
+    -> before-render callbacks
+    -> material swap processing
+    -> shadow generators and legacy pre-passes
+    -> shared uniform updaters
+  scene._record()
+    -> frameGraph.execute()
+      -> _executeTask(task)
+        -> each pass._execute()
+```
+
+`FrameGraph.build()` calls `record()` on every task. `record()` is where `RenderTask` builds the render target, stores the current target dimensions in its update context, builds the pass descriptor, auto-fills from scene renderables when `_renderables` is empty, resolves pending `addMesh()` material overrides, and creates per-target `DrawBinding` lists.
+
+## RenderTask Buckets
+
+At record/re-sync time, a render pass task partitions bindings into:
+
+| Bucket | Source flag | Draw path |
+| --- | --- | --- |
+| Bucket<br>Opaque | Source flag<br>`!isTransparent && !_direct` | Draw path<br>Cached `GPURenderBundle` when visibility/version state is unchanged |
+| Bucket<br>Direct | Source flag<br>`_direct` | Draw path<br>Direct draw after opaque bundle |
+| Bucket<br>Transparent | Source flag<br>`isTransparent || _transmissive` | Draw path<br>Direct draw, camera-space-depth sorted back-to-front per pass |
+
+Opaque and direct bindings are sorted by `renderable.order`. Transparent bindings must remain camera-space-depth sorted and are not pipeline-sorted. `_transmissive` marks true scene-texture refraction surfaces; the render task routes them into the same sorted transparent loop so transmission snapshots happen immediately before the current transmissive draw. `_direct` selects the non-transparent direct-draw bucket; mutable depth-writing sprite/billboard batches set `_direct` without `_transmissive` so they still appear in opaque-scene refraction RTTs.
+
+## Per-Pass Scene UBO
+
+Each `RenderTask` owns:
+
+- `_sceneUBO`
+- `_sceneBG`
+- scene UBO scratch/cache arrays
+
+`writePassSceneUBO()` writes the canonical 352-byte `SceneUniforms` struct for the pass. Offscreen render targets use a Y-flipped projection so downstream texture sampling is upright. Swapchain tasks do not flip. The task-level UBO lets RTT passes, canvas passes, and camera overrides coexist without mutating global scene state.
+
+## Material-Owned Pipelines
+
+Material renderable builders remain responsible for:
+
+1. Computing feature bits from mesh/material/scene state
+2. Dynamically importing needed shader fragments
+3. Composing WGSL
+4. Creating/caching pipelines and bind group layouts
+5. Returning renderables whose `bind(engine, target)` selects the correct pipeline for that target signature
+
+The frame graph never imports material-specific shader code.
+
+## Material Views
+
+Material views are lightweight pass-specific views over a source material. They are used when a render task needs different render features for the same source material state, for example rendering Standard/PBR meshes into shadow-depth RTTs.
+
+```typescript
+export interface Material {
+    readonly _buildGroup: MeshGroupBuilder;
+    _renderFeatures: MaterialRenderFeatures;
+    _uboVersion: number;
+    _views?: MaterialView[];
+}
+
+export interface MaterialRenderFeatures {
+    features: number;
+    features2?: number;
+}
+
+export interface MaterialView extends Material {
+    readonly source: Material;
+    _renderFeatures: MaterialRenderFeatures;
+}
+
+export type MaterialOrView = Material | MaterialView;
+
+export function createMaterialView(source: MaterialOrView, renderFeatures: MaterialRenderFeatures): MaterialView;
+export function markMaterialUboDirty(materialOrView: MaterialOrView): void;
+export function rebuildMaterial(scene: SceneContext, materialOrView: MaterialOrView, options?: RebuildMaterialOptions): void;
+
+// Public, read-only material-family discriminator.
+export function getMaterialFamily(material: MaterialOrView): string | undefined;
+
+// Public TypeScript type guards for the well-known core material families.
+export function isPbrMaterial(material: Material): material is PbrMaterialProps;
+export function isStandardMaterial(material: Material): material is StandardMaterialProps;
+export function isShaderMaterial(material: Material): material is ShaderMaterial;
+export function isNodeMaterial(material: Material): material is NodeMaterial;
+```
+
+`getMaterialFamily()` returns a stable string identifying which concrete family a material belongs to, so scene explorers, serializers, and diagnostics can display the family using only public APIs — never private renderer fields or property-shape heuristics. It unwraps a `MaterialView` to its `source` and reads the family declared on the material's `_buildGroup`. It returns `"pbr"`, `"standard"`, `"shader"` (including the grid material and other `createShaderMaterial`-based materials), `"node"`, or `undefined` (deliberately discoverable from the `string | undefined` signature so callers handle the unknown case). The material-builder surface (`_buildGroup`) is `@internal`, so package consumers cannot author their own builder: a user-created "custom material" is a `createShaderMaterial` (reported as `"shader"`) or a node material (`"node"`), and `getMaterialFamily` will not return an arbitrary user-defined string today. The return type is nonetheless a raw `string` rather than a string-literal union so a new core family can be added without a breaking change, and so the function stays forward-compatible if a public custom-family builder API is introduced later (it passes any tagged string through unchanged).
+
+`isPbrMaterial()`, `isStandardMaterial()`, `isShaderMaterial()`, and `isNodeMaterial()` are formal TypeScript type guards over `getMaterialFamily()`: each narrows a `Material` to the concrete family type (`PbrMaterialProps`, `StandardMaterialProps`, `ShaderMaterial`, `NodeMaterial`). A `MaterialView` over a matching source passes its family's guard, since it inherits every property from the source through its prototype chain. All of these functions are fully tree-shakable: scenes that never call them retain zero bytes for them.
+
+`createMaterialView()` creates a material-compatible object whose prototype is the source material, then stores only view-owned render feature bits and a `source` pointer. Textures, samplers, uniforms, alpha/culling state, extension data, `_buildGroup`, and UBO versions are inherited from the source material. Creating a view from another view collapses to the original source and registers the new view in `source._views`.
+
+Material renderables intentionally do not import material-view helpers or unwrap the source material. They read the selected material object normally: plain materials recompute/store `material._renderFeatures` at build time, while views provide their own `_renderFeatures` and inherit every other property from the source. This keeps material-view helper bytes isolated to scenes that import `createMaterialView()` or family-specific view helpers. Mesh/pass feature bits remain separate and are computed per renderable.
+
+`markMaterialUboDirty()` increments `source._uboVersion`, so every renderable/view derived from that source can observe scalar/vector UBO changes independently. `rebuildMaterial()` rebuilds meshes using the source and, by default, any views created from that source; use it for feature/layout changes such as texture changes, sampler/layout changes, alpha/culling changes, or view feature changes.
+
+## `_buildGroup` Pattern
+
+Materials carry `_buildGroup: MeshGroupBuilder` on their props. `addToScene()` groups meshes by builder, and deferred builders run before rendering to produce renderables.
+
+`MeshGroupBuildResult.rebuildSingle` is also stored on the builder as `_rebuildSingle`, so material swaps and `RenderTask.addMesh(mesh, { material })` can rebuild one mesh with an optional per-pass material override.
+
+## Babylon.js Equivalence Map
+
+| Babylon Lite | Babylon.js |
+| --- | --- |
+| Babylon Lite<br>`FrameGraph` \+ `Task` | Babylon.js<br>Frame graph / render graph scheduling |
+| Babylon Lite<br>`RenderTask` | Babylon.js<br>Render pass task that binds target + camera state |
+| Babylon Lite<br>`Renderable.bind()` | Babylon.js<br>Material/effect submesh binding for a target |
+| Babylon Lite<br>`DrawBinding` | Babylon.js<br>Prepared draw item / submesh draw packet |
+| Babylon Lite<br>`MaterialView` | Babylon.js<br>Pass-specific material variant / render override |
+| Babylon Lite<br>Task-owned scene UBO | Babylon.js<br>Per-pass scene uniform state |
+| Babylon Lite<br>Opaque/transmissive/transparent buckets | Babylon.js<br>Rendering group draw lists |
+| Babylon Lite<br>`renderable.order` | Babylon.js<br>Rendering order / group sorting |
+
+## Dependencies
+
+- `render/renderable.ts` imports only engine/mesh/render-target types.
+- `frame-graph/frame-graph.ts` depends on `Task`, `EngineContextInternal`, and `SceneContextInternal`.
+- `frame-graph/render-task.ts` depends on render targets, camera matrices, canonical scene UBO helpers, and the `Renderable`/`DrawBinding` contracts.
+- Material modules depend on `Renderable` and return target-bindable renderables; the frame graph does not depend on material modules.
+- `material/material-view.ts`, `material/material-dirty.ts`, and `material/material-rebuild.ts` own the shared material-view and material-rebuild helpers used by render tasks and material families.
+
+## File Manifest
+
+| File | Purpose |
+| --- | --- |
+| File<br>`src/render/renderable.ts` | Purpose<br>`Renderable`, `DrawBinding`, `PrePassRenderable`, optional `SceneUniformUpdater`, `MeshGroupBuildResult`, `MeshGroupBuilder` |
+| File<br>`src/frame-graph/task.ts` | Purpose<br>Polymorphic frame-graph task interface |
+| File<br>`src/frame-graph/frame-graph.ts` | Purpose<br>Ordered task list, build/execute/dispose lifecycle |
+| File<br>`src/frame-graph/frame-graph-actions.ts` | Purpose<br>`addTask`, `addTaskAtStart`, `addTaskBefore` helpers |
+| File<br>`src/frame-graph/render-task.ts` | Purpose<br>Render task implementation, per-pass scene UBO, renderable bucketing, RTT/swapchain pass execution |
+| File<br>`src/material/material.ts` | Purpose<br>Shared material, material-view, and render-feature interfaces |
+| File<br>`src/material/material-view.ts` | Purpose<br>Lightweight material view creation and source normalization |
+| File<br>`src/material/material-dirty.ts` | Purpose<br>Source-material UBO version bump helper |
+| File<br>`src/material/material-rebuild.ts` | Purpose<br>Rebuild helpers for source materials and their views |
+
+[![Babylon.js logo](https://doc.babylonjs.com/img/babylonidentity.svg)](https://doc.babylonjs.com/lite/)
+
+[Babylon.js](https://doc.babylonjs.com/) [Babylon Lite](https://doc.babylonjs.com/lite/)
+
+Filter
+
+Filter
+
+- [Welcome](https://doc.babylonjs.com/lite/)
+
+- [Getting Started](https://doc.babylonjs.com/lite/01-getting-started/)
+
+- [Feature Comparison](https://doc.babylonjs.com/lite/02-feature-comparison/)
+
+- [Porting Guide](https://doc.babylonjs.com/lite/03-porting-guide/)
+
+- [Playground](https://doc.babylonjs.com/lite/04-playground/)
+
+- [Headless Null Engine](https://doc.babylonjs.com/lite/05-headless-null-engine/)
+
+- [Architecture](https://doc.babylonjs.com/lite/architecture/00-overview/)

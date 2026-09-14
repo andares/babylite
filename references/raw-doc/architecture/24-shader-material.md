@@ -1,0 +1,600 @@
+---
+title: Shader Material
+source: https://doc.babylonjs.com/lite/architecture/24-shader-material/
+section: Architecture
+---
+
+[API](https://doc.babylonjs.com/lite/typedoc/)
+
+[Babylon Lite](https://doc.babylonjs.com/lite/)\|
+
+[Architecture](https://doc.babylonjs.com/lite/architecture/)\|
+
+[Shader Material](https://doc.babylonjs.com/lite/architecture/24-shader-material/)
+
+…\|
+
+[Babylon Lite](https://doc.babylonjs.com/lite/)\|
+
+[Architecture](https://doc.babylonjs.com/lite/architecture/)\|
+
+[Shader Material](https://doc.babylonjs.com/lite/architecture/24-shader-material/)
+
+[Babylon.js](https://doc.babylonjs.com/) [Babylon Lite](https://doc.babylonjs.com/lite/)
+
+Filter
+
+Filter
+
+- [Welcome](https://doc.babylonjs.com/lite/)
+
+- [Getting Started](https://doc.babylonjs.com/lite/01-getting-started/)
+
+- [Feature Comparison](https://doc.babylonjs.com/lite/02-feature-comparison/)
+
+- [Porting Guide](https://doc.babylonjs.com/lite/03-porting-guide/)
+
+- [Playground](https://doc.babylonjs.com/lite/04-playground/)
+
+- [Headless Null Engine](https://doc.babylonjs.com/lite/05-headless-null-engine/)
+
+- [Architecture](https://doc.babylonjs.com/lite/architecture/00-overview/)
+
+
+# Module: Shader Material
+
+### Table Of Contents
+
+[Module: Shader Material](https://doc.babylonjs.com/lite/architecture/24-shader-material/#module-shader-material) [Purpose](https://doc.babylonjs.com/lite/architecture/24-shader-material/#purpose) [Public API Surface](https://doc.babylonjs.com/lite/architecture/24-shader-material/#public-api-surface) [Factory](https://doc.babylonjs.com/lite/architecture/24-shader-material/#factory) [Material type](https://doc.babylonjs.com/lite/architecture/24-shader-material/#material-type) [Attributes](https://doc.babylonjs.com/lite/architecture/24-shader-material/#attributes) [Thin instances and GPU culling](https://doc.babylonjs.com/lite/architecture/24-shader-material/#thin-instances-and-gpu-culling) [Uniform declarations](https://doc.babylonjs.com/lite/architecture/24-shader-material/#uniform-declarations) [Sampler declarations](https://doc.babylonjs.com/lite/architecture/24-shader-material/#sampler-declarations) [Defines](https://doc.babylonjs.com/lite/architecture/24-shader-material/#defines) [Setters](https://doc.babylonjs.com/lite/architecture/24-shader-material/#setters) [WGSL Authoring Contract](https://doc.babylonjs.com/lite/architecture/24-shader-material/#wgsl-authoring-contract) [Internal Architecture](https://doc.babylonjs.com/lite/architecture/24-shader-material/#internal-architecture) [File manifest](https://doc.babylonjs.com/lite/architecture/24-shader-material/#file-manifest) [Group builder](https://doc.babylonjs.com/lite/architecture/24-shader-material/#group-builder) [Per-material grouping](https://doc.babylonjs.com/lite/architecture/24-shader-material/#per-material-grouping) [Pipeline cache](https://doc.babylonjs.com/lite/architecture/24-shader-material/#pipeline-cache) [Bind group layout](https://doc.babylonjs.com/lite/architecture/24-shader-material/#bind-group-layout) [UBO layout](https://doc.babylonjs.com/lite/architecture/24-shader-material/#ubo-layout) [Matrix convention](https://doc.babylonjs.com/lite/architecture/24-shader-material/#matrix-convention) [Floating origin](https://doc.babylonjs.com/lite/architecture/24-shader-material/#floating-origin) [Pipeline Configuration](https://doc.babylonjs.com/lite/architecture/24-shader-material/#pipeline-configuration) [Shader Logic Outline](https://doc.babylonjs.com/lite/architecture/24-shader-material/#shader-logic-outline) [State Machine / Lifecycle](https://doc.babylonjs.com/lite/architecture/24-shader-material/#state-machine--lifecycle) [Babylon.js Equivalence Map](https://doc.babylonjs.com/lite/architecture/24-shader-material/#babylonjs-equivalence-map) [Dependencies](https://doc.babylonjs.com/lite/architecture/24-shader-material/#dependencies) [Test Specification](https://doc.babylonjs.com/lite/architecture/24-shader-material/#test-specification)
+
+> Package path: `packages/babylon-lite/src/material/shader/`
+
+## Purpose
+
+The ShaderMaterial module provides Lite's WGSL-only equivalent of Babylon.js `ShaderMaterial`: user-authored vertex and fragment shaders, explicit vertex attribute lists, typed custom uniforms, texture samplers, compile-time defines, and render-state hints such as alpha blending.
+
+This module is intentionally **not** a GLSL compatibility layer. Babylon.js documentation and playgrounds remain useful as reference scenes and API concepts, but Lite accepts WGSL source only. There is no GLSL parser, no GLSL-to-WGSL transpiler, and no `Effect.ShadersStore` global registry in core.
+
+The design follows the Lite material contract:
+
+- A ShaderMaterial is plain data with a material-owned `_buildGroup`.
+- The scene never knows about shader-specific details.
+- The renderer only binds group 0 and asks renderables to draw.
+- The material owns shader source, bind group layouts, pipelines, bind groups, and resource lifetime.
+- Structured GPU layout comes from typed options, never by parsing emitted WGSL.
+
+## Public API Surface
+
+### Factory
+
+```typescript
+export function createShaderMaterial(options: ShaderMaterialOptions): ShaderMaterial;
+```
+
+`createShaderMaterial` is synchronous and accepts already-resolved WGSL source strings.
+
+```typescript
+export interface ShaderMaterialOptions {
+    readonly name?: string;
+    readonly vertexSource: string;
+    readonly fragmentSource: string;
+    readonly attributes: readonly ShaderAttributeName[];
+    readonly uniforms?: readonly ShaderUniformOption[];
+    readonly samplers?: readonly ShaderSamplerOption[];
+    readonly defines?: ShaderDefineMap;
+    /** Bind/inject the mesh's optional thin-instance RGBA stream for this material. Default true. */
+    readonly useThinInstanceColors?: boolean;
+    readonly needAlphaBlending?: boolean;
+    readonly blendMode?: "alpha" | "additive";
+    readonly blend?: GPUBlendState;
+    readonly needAlphaTesting?: boolean;
+    readonly backFaceCulling?: boolean;
+    readonly depthWrite?: boolean;
+    readonly depthCompare?: GPUCompareFunction;
+}
+```
+
+Supported Babylon route forms:
+
+| Babylon route form | Lite phase 1 handling |
+| --- | --- |
+| Babylon route form<br>`{ vertexSource, fragmentSource }` | Lite phase 1 handling<br>Supported, but source strings must be WGSL. |
+| Babylon route form<br>`{ vertex, fragment }` with `Effect.ShadersStore` | Lite phase 1 handling<br>Not supported in core; global shader stores violate Lite's no-side-effect rule. |
+| Babylon route form<br>`{ vertexElement, fragmentElement }` | Lite phase 1 handling<br>Not supported in core. Callers may read DOM text and pass WGSL strings explicitly. |
+| Babylon route form<br>`"./COMMON_NAME"` external `.fx` files | Lite phase 1 handling<br>Not supported in core. A future helper may fetch WGSL explicitly, but the material factory stays synchronous. |
+
+### Material type
+
+```typescript
+export interface ShaderMaterial extends Material {
+    readonly name?: string;
+    readonly vertexSource: string;
+    readonly fragmentSource: string;
+    readonly attributes: readonly ShaderAttributeName[];
+    readonly uniformDecls: readonly ShaderUniformDecl[];
+    readonly samplerDecls: readonly ShaderSamplerDecl[];
+    readonly defines: readonly ShaderDefine[];
+    readonly needAlphaBlending: boolean;
+    readonly blendMode: "alpha" | "additive";
+    readonly blend?: GPUBlendState;
+    readonly needAlphaTesting: boolean;
+    readonly backFaceCulling: boolean;
+    readonly depthWrite: boolean;
+    readonly depthCompare: GPUCompareFunction;
+    _uniformValues: Map<string, ShaderUniformSlot>;
+    _textureSlots: Map<string, ShaderTextureSlot>;
+    _uniformVersion: number;
+    _resourceVersion: number;
+}
+```
+
+`_uboVersion` from the base `Material` mirrors `_uniformVersion` for compatibility with existing dirty tracking. `_resourceVersion` is separate because texture/sampler changes require bind group rebuilds, not just UBO writes.
+
+`blend` is an explicit color-target blend-state override. When present, it replaces the state derived from `blendMode`, implies `needAlphaBlending` unless explicitly overridden, defaults `depthWrite` to `false`, and participates in the cross-material pipeline-cache key.
+
+### Attributes
+
+```typescript
+export type ShaderAttributeName = "position" | "normal" | "uv" | "uv2" | "tangent" | "color";
+```
+
+The order in `options.attributes` is the vertex buffer binding order and the WGSL `@location` order. Unsupported names throw during material creation. Missing optional mesh buffers use zero-filled buffers, matching NodeMaterial behavior. `position` is required for normal mesh rendering.
+
+### Thin instances and GPU culling
+
+A ShaderMaterial mesh can be hardware-instanced via the standard thin-instance API (`setThinInstances`, `setThinInstanceColors`, `enableThinInstanceGpuCulling` — see `12-thin-instances.md`). No new ShaderMaterial option is required: when a mesh has `thinInstances`, the renderer builds a per-mesh **instance pipeline variant** and auto-injects extra attributes into the generated `VertexInput` struct, appended after the declared attributes (so at `@location(attributes.length)` onward):
+
+```wgsl
+@location(N)   world0: vec4<f32>,   // instance world matrix columns
+@location(N+1) world1: vec4<f32>,
+@location(N+2) world2: vec4<f32>,
+@location(N+3) world3: vec4<f32>,
+@location(N+4) instanceColor: vec4<f32>,   // only when setThinInstanceColors() was called
+```
+
+`useThinInstanceColors` controls whether this particular ShaderMaterial draw consumes the mesh's optional
+RGBA stream. It defaults to `true`, preserving the automatic behaviour above. When set to `false`, the
+instanced variant still injects and binds `world0..world3`, but it does not inject `instanceColor`, bind or
+GPU-cull a color buffer, or synchronize colors for that draw. The mesh's `ThinInstanceData.colors` remains
+intact, so another material rendering the same mesh can still consume it.
+
+The option is specifically valid for sampler-free depth/material overrides: a visible material may consume
+per-instance tint while its `_shadowCasterMaterial` uses `{ useThinInstanceColors: false }`. Both draws then
+share the mesh's one matrix buffer, while the caster avoids an unused color vertex stream. The override WGSL
+must not reference `input.instanceColor`. The option is ignored for non-instanced meshes.
+
+The user shader composes the instance transform itself (matching Babylon.js `instancesVertex`):
+
+```wgsl
+let iw = mat4x4<f32>(input.world0, input.world1, input.world2, input.world3);
+out.position = shaderSystem.viewProjection * (shaderSystem.world * iw) * vec4<f32>(input.position, 1.0);
+// out.vColor = input.instanceColor;  // when instance colors are present
+```
+
+The `world` system uniform stays the **mesh** world matrix; for thin instances the effective world is `world * iw`. The baked `worldViewProjection` / `worldView` system uniforms are **not** instance-aware — instanced shaders must use `viewProjection` (\+ `world`) and compose with `iw` themselves.
+
+Implementation notes (bundle discipline):
+
+- The instance vertex-buffer layouts, the prelude attribute lines, and the per-mesh instanced renderable live in `material/shader/shader-thin-instance.ts`, **dynamically imported** via `shader-group-builder.ts` → `buildShaderGroup` only when `meshes.some(m => m.thinInstances)`. Non-instanced ShaderMaterial scenes route through the unchanged synchronous `buildShaderMaterialRenderables`.
+- The expensive bindings (`group1BGL`, `systemSpec`, `customSpec`) are shared between the non-instanced and instanced variants — instancing is vertex data, not bind groups. Only the vertex buffer layouts and the `VertexInput` struct differ, so `getOrCreateShaderPipeline()` keys instanced pipelines on a compact non-empty variant suffix (`0` or `1`). The color bit is `1` only when the mesh has colors and the material did not opt out through `useThinInstanceColors`.
+- Instanced ShaderMaterial meshes render as **one `_direct` renderable per mesh** (not merged), so per-mesh instance buffers are re-bound fresh each frame (avoiding stale render-bundle references when instance capacity grows).
+- **Opt-in GPU frustum culling** is wired via the shared `mesh/thin-instance-cull-binding.ts` helper (same as Standard/PBR): when `enableThinInstanceGpuCulling(mesh)` is set, the compute cull pass runs in the binding `update()` and the draw becomes `drawIndexedIndirect`. Opaque instanced ShaderMaterial only; transparent instanced meshes use the normal (non-culled) instanced draw.
+
+### Uniform declarations
+
+```typescript
+export type ShaderUniformType = "f32" | "u32" | "i32" | "vec2<f32>" | "vec3<f32>" | "vec4<f32>" | "mat4x4<f32>";
+
+export type ShaderSystemUniformName = "world" | "view" | "projection" | "viewProjection" | "worldView" | "worldViewProjection" | "cameraPosition" | "screenSize" | "alphaCutoff";
+
+export type ShaderUniformOption = ShaderSystemUniformName | ShaderUniformDecl;
+
+export interface ShaderUniformDecl {
+    readonly name: string;
+    readonly type: ShaderUniformType;
+    readonly defaultValue?: number | readonly number[];
+}
+```
+
+String uniforms are only accepted for known Babylon-style system uniforms. Custom uniforms must include a type. This keeps the Babylon `uniforms: ["worldViewProjection", "time"]` concept where safe, while rejecting ambiguous custom strings like `"time"` unless the caller provides `{ name: "time", type: "f32" }`.
+
+### Sampler declarations
+
+```typescript
+export type ShaderSamplerOption = string | ShaderSamplerDecl;
+
+export interface ShaderSamplerDecl {
+    readonly name: string;
+    readonly sampleType?: "float" | "unfilterable-float" | "depth";
+}
+```
+
+Each sampler name maps to a pair of WGSL bindings:
+
+```wgsl
+@group(1) @binding(N) var textureSampler: texture_2d<f32>;
+@group(1) @binding(N + 1) var textureSamplerSampler: sampler;
+```
+
+Depth samplers use `texture_depth_2d` and a filtering sampler is not assumed. Public APIs accept `Texture2D` only, never raw GPU handles.
+
+### Defines
+
+```typescript
+export type ShaderDefineValue = boolean | number;
+export type ShaderDefineMap = Readonly<Record<string, ShaderDefineValue>>;
+
+export interface ShaderDefine {
+    readonly name: string;
+    readonly value: ShaderDefineValue;
+}
+```
+
+WGSL has no preprocessor. Lite converts defines to const declarations in the generated prelude:
+
+```wgsl
+const MyDefine: bool = true;
+const Scale: f32 = 2.0;
+```
+
+The normalized define set is part of the pipeline cache key. Callers write ordinary WGSL `if (MyDefine) { ... }`; the WGSL compiler can constant-fold the branch. `#define`, `#ifdef`, and string macro replacement are not supported.
+
+### Setters
+
+```typescript
+export type ShaderUniformValue = number | readonly number[] | Float32Array;
+
+export function setShaderUniform(material: ShaderMaterial, name: string, value: ShaderUniformValue): void;
+export function setShaderTexture(material: ShaderMaterial, name: string, texture: Texture2D | null): void;
+export function enableShaderMaterialUniformCaching(): void;
+export function enableShaderUniformRangeUpdates(scene: SceneContext, material: ShaderMaterial): void;
+```
+
+`setShaderUniform` validates that the name exists, the declared type is custom or settable, and the supplied float count matches the declaration. It increments `_uniformVersion` and `_uboVersion`.
+
+`enableShaderMaterialUniformCaching` is a process-wide opt-in for scenes with many ShaderMaterials. It caches each
+material's system/custom UBO layout and typed-array views, and serializes only custom uniform slots whose setter
+version changed. Call it before scene registration. Scenes that do not opt in retain the compact default serializer
+and do not include the caching implementation in their bundle.
+
+`enableShaderUniformRangeUpdates` is an opt-in for materials with large custom UBOs and one or a few animated
+values. After the custom UBO has been packed once, each changed custom value is written directly into the
+material's retained packed `ArrayBuffer`. The opt-in updater widens one pending byte range across all changes made
+before the next frame, then uploads only that 4-byte-aligned range through `queue.writeBuffer` from a scene
+before-render callback. The first upload and every packed-buffer recreation
+remain whole-buffer writes. System uniforms have no custom offset and therefore produce no custom-UBO upload.
+Enabling is idempotent per scene, and the same material may be registered with multiple scenes.
+Materials that do not opt in keep the original renderable-owned whole-buffer path and pull in zero range-update
+implementation bytes.
+
+`setShaderTexture` validates that the sampler exists, stores the `Texture2D | null`, and increments `_resourceVersion`. The renderable rebuilds the group-1 bind group when the resource version changes.
+
+Convenience wrappers may be added if they stay small and tree-shakable:
+
+```typescript
+export function setShaderFloat(material: ShaderMaterial, name: string, value: number): void;
+export function setShaderVector3(material: ShaderMaterial, name: string, value: readonly [number, number, number]): void;
+export function setShaderMatrix(material: ShaderMaterial, name: string, value: Float32Array): void;
+```
+
+The core implementation should route all wrappers through `setShaderUniform`.
+
+## WGSL Authoring Contract
+
+User WGSL must define complete vertex and fragment entry points. Lite does not rewrite entry point bodies.
+
+Recommended entry point names are `mainVertex` and `mainFragment`, but options may later expose entry point names if needed. Phase 1 can require:
+
+```wgsl
+@vertex
+fn mainVertex(input: VertexInput) -> VertexOutput { ... }
+
+@fragment
+fn mainFragment(input: VertexOutput) -> @location(0) vec4<f32> { ... }
+```
+
+Lite prepends a generated prelude before user source:
+
+1. `SceneUniforms` from the shared scene group (`@group(0) @binding(0)`).
+2. `ShaderSystemUniforms` for requested per-mesh system values (`@group(1) @binding(0)`).
+3. Optional `ShaderUniforms` for custom uniforms (`@group(1) @binding(1)`).
+4. Texture/sampler declarations for `options.samplers`.
+5. WGSL const declarations for `options.defines`.
+6. `VertexInput` generated from `options.attributes`.
+
+User WGSL must not declare:
+
+- `@group(0)` bindings.
+- `@group(1)` bindings using names generated by the material.
+- `struct VertexInput` unless an option explicitly opts out of generated input.
+- Duplicate uniform, sampler, or define identifiers.
+
+Generated names intentionally match the names listed in the options where possible:
+
+- System matrix fields are available as `shaderSystem.world`, `shaderSystem.worldViewProjection`, etc.
+- Custom uniforms are available as `shaderUniforms.time`, `shaderUniforms.direction`, etc.
+- Texture samplers are available as `<name>` and `<name>Sampler`.
+- Scene fields remain available through `scene.viewProjection`, `scene.view`, `scene.vEyePosition`, etc.
+
+## Internal Architecture
+
+### File manifest
+
+```text
+packages/babylon-lite/src/material/shader/
+  shader-material.ts       Public types, factory, setters, validation.
+  shader-group-builder.ts  MeshGroupBuilder entry point and lazy renderable import.
+  shader-renderable.ts     Per-scene/per-mesh renderables, UBO writes, bind groups.
+  shader-pipeline.ts       Generated prelude, BGL creation, pipeline cache.
+```
+
+### Group builder
+
+Every material returned by `createShaderMaterial` sets `_buildGroup` to `shaderGroupBuilder`.
+
+```typescript
+export const shaderGroupBuilder: MeshGroupBuilder = async (scene, meshes) => {
+    const { buildShaderMaterialRenderables } = await import("./shader-renderable.js");
+    const result = buildShaderMaterialRenderables(scene, meshes);
+    shaderGroupBuilder._rebuildSingle = result.rebuildSingle;
+    return result;
+};
+```
+
+The group builder has no module-level registry and imports renderable code only when a scene actually uses ShaderMaterial.
+
+### Per-material grouping
+
+`buildShaderMaterialRenderables(scene, meshes)` groups meshes by `ShaderMaterial` instance. Each material instance owns:
+
+- Normalized source strings.
+- Normalized attributes.
+- Normalized uniform/sampler/define declarations.
+- Pipeline variant cache for target signatures.
+- One custom UBO per material if custom uniforms exist.
+- Per-texture slots and resource version.
+
+Opaque ShaderMaterials may batch multiple meshes under one renderable if they share one material instance and target pipeline. Transparent ShaderMaterials should emit one renderable per mesh so frame-graph sorting can use each mesh world center.
+
+A merged opaque renderable has no single source mesh for the frame graph to visibility-filter. Its render-bundle recording loop must therefore skip each packet whose mesh has
+`visible === false`; steady-state per-frame updates remain unchanged.
+
+### Pipeline cache
+
+Cache scope is per material instance, not module-level. Cross-material pipeline sharing is a non-goal for phase 1 because module-level `Map` allocations violate Lite's tree-shaking guidance. A future device-owned cache may be added if profiling proves it necessary.
+
+The cache key includes:
+
+- Vertex WGSL source.
+- Fragment WGSL source.
+- Generated prelude key.
+- Attribute list/order.
+- Uniform layout.
+- Sampler layout.
+- Define set.
+- Alpha/depth/cull state.
+- Render target signature: color format, depth/stencil format, sample count, flipY.
+- Thin-instance variant: matrix stream present and whether this material consumes the optional color stream.
+
+### Bind group layout
+
+The pipeline layout is:
+
+| Group | Owner | Bindings |
+| --- | --- | --- |
+| Group<br>0 | Owner<br>Frame graph render task | Bindings<br>`SceneUniforms`, scene lights UBO |
+| Group<br>1 | Owner<br>ShaderMaterial | Bindings<br>system UBO, optional custom UBO, textures, samplers |
+
+Group 1 binding order:
+
+1. `ShaderSystemUniforms` at binding 0. Always present so the layout is stable.
+2. `ShaderUniforms` at binding 1 if custom uniform declarations exist.
+3. Texture/sampler pairs in declaration order.
+
+### UBO layout
+
+Use `computeUboLayout()` from `src/shader/ubo-layout.ts`. Do not split WGSL strings or parse user shader source.
+
+`ShaderSystemUniforms` contains only requested per-mesh values:
+
+| Uniform | Type | Source |
+| --- | --- | --- |
+| Uniform<br>`world` | Type<br>`mat4x4<f32>` | Source<br>`mesh.worldMatrix` |
+| Uniform<br>`worldView` | Type<br>`mat4x4<f32>` | Source<br>`view * world` in Lite matrix convention |
+| Uniform<br>`worldViewProjection` | Type<br>`mat4x4<f32>` | Source<br>`scene.viewProjection * world` in Lite matrix convention |
+| Uniform<br>`projection` | Type<br>`mat4x4<f32>` | Source<br>active pass camera projection |
+| Uniform<br>`screenSize` | Type<br>`vec2<f32>` | Source<br>active pass target width/height |
+| Uniform<br>`alphaCutoff` | Type<br>`f32` | Source<br>material/system value, default `0.4` |
+
+Scene-level values should be aliased or read from group 0 rather than copied per mesh when possible:
+
+| Uniform | Preferred source |
+| --- | --- |
+| Uniform<br>`view` | Preferred source<br>`scene.view` |
+| Uniform<br>`viewProjection` | Preferred source<br>`scene.viewProjection` |
+| Uniform<br>`cameraPosition` | Preferred source<br>`scene.vEyePosition.xyz` |
+
+If a caller requests the Babylon-style `viewProjection` string, the generated prelude may expose an alias function or const-like local expression in helper code, but it should not allocate a duplicate per-mesh UBO slot.
+
+### Matrix convention
+
+Lite's camera helper computes `viewProjection` as `projection * view`, and material templates currently multiply clip positions by `scene.viewProjection * worldPosition` according to existing engine conventions. ShaderMaterial must use the same convention so it matches Standard, PBR, and NodeMaterial.
+
+### Floating origin
+
+Under LWR (`35-large-world-rendering.md`) the frame the system uniforms describe is **eye-relative, not absolute**. `getViewMatrix` forces the view translation to zero on a floating-origin camera because it expects the mesh world to have already been rebased; Standard, PBR and Node renderables do that in their mesh-world pack, and ShaderMaterial does it in `_shaderWorldMatrix(mesh, camera, out?)`, which both the default and the cached uniform writers call.
+
+Consequences a shader author sees:
+
+- `world`, `worldView` and `worldViewProjection` all carry the camera-relative translation. They derive from one rebased matrix, so they stay in a single frame.
+- `cameraPosition` is `(0, 0, 0)` — in the frame `world` is expressed in, the camera _is_ the origin. This keeps the documented `scene.vEyePosition.xyz` equivalence above, which `_packSceneUniforms` already zeroes under FO. An expression like `cameraPosition - worldPos` therefore still yields the correct eye-relative vector, and now at full precision. **This is a breaking change** for any custom shader that read `cameraPosition` as an absolute world-space position while `useFloatingOrigin` was enabled — see the release notes for the migration path.
+- Absolute world coordinates are not recoverable from the UBO. A shader that genuinely needs them should take them as a custom uniform.
+
+With floating origin off, every value above is the plain absolute one and the path is copy-free.
+
+`_shaderWorldMatrix`'s third parameter, `out`, is optional and exists only so tests and other direct callers can supply their own destination instead of reusing the module-scoped FO scratch buffer — without it, two calls in a row alias the same array, and the second overwrites the first. The two renderable writers above never pass it, so they keep the original copy-free behaviour: the shared scratch under FO, `mesh.worldMatrix` returned by reference when FO is off. When `out` **is** given, both branches write into it (including the FO-off case, which would otherwise return `mesh.worldMatrix` unchanged) so passing `out` always means "the answer is here."
+
+## Pipeline Configuration
+
+Defaults match normal Lite mesh rendering:
+
+```typescript
+primitive.topology = "triangle-list";
+primitive.frontFace = target.flipY ? "cw" : "ccw";
+primitive.cullMode = options.backFaceCulling === false ? "none" : "back";
+depthStencil.format = target.depthStencilFormat ?? "depth24plus-stencil8";
+depthStencil.depthCompare = options.depthCompare ?? "greater-equal";
+depthStencil.depthWriteEnabled = options.needAlphaBlending ? false : (options.depthWrite ?? true);
+multisample.count = target.sampleCount;
+```
+
+Alpha blending:
+
+```typescript
+if (needAlphaBlending) {
+    blend.color = { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" };
+    blend.alpha = { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" };
+}
+```
+
+Alpha testing:
+
+- `needAlphaTesting` does not auto-inject fragment code.
+- The shader must explicitly call `discard`.
+- If the shader wants an engine-provided cutoff value, it lists `"alphaCutoff"` in `uniforms` and reads `shaderSystem.alphaCutoff`.
+
+## Shader Logic Outline
+
+The simplest WGSL equivalent of the Babylon docs' basic ShaderMaterial:
+
+```wgsl
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+};
+
+@vertex
+fn mainVertex(input: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+    out.position = shaderSystem.worldViewProjection * vec4<f32>(input.position, 1.0);
+    return out;
+}
+
+@fragment
+fn mainFragment(input: VertexOutput) -> @location(0) vec4<f32> {
+    return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+}
+```
+
+The texture sampler equivalent:
+
+```wgsl
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn mainVertex(input: VertexInput) -> VertexOutput {
+    var out: VertexOutput;
+    out.position = shaderSystem.worldViewProjection * vec4<f32>(input.position, 1.0);
+    out.uv = input.uv;
+    return out;
+}
+
+@fragment
+fn mainFragment(input: VertexOutput) -> @location(0) vec4<f32> {
+    return textureSample(textureSampler, textureSamplerSampler, input.uv);
+}
+```
+
+## State Machine / Lifecycle
+
+01. User calls `createShaderMaterial(options)`.
+02. Factory validates attributes, normalizes uniform/sampler/define declarations, creates value slots, and attaches `_buildGroup`.
+03. User assigns the material to meshes and adds them to the scene.
+04. `registerScene` runs deferred builders; `shaderGroupBuilder` dynamically imports `shader-renderable.ts`.
+05. Renderable builder groups meshes by material instance.
+06. For each material, `shader-pipeline.ts` builds a generated prelude, shader module, group-1 BGL, and render pipeline for the active target signature.
+07. For each mesh, the renderable creates a system UBO and group-1 bind group.
+08. Each frame, `DrawBinding.update(context)` refreshes system UBOs when world/camera/target data changes and custom UBOs when `_uboVersion` changes.
+09. Draw binds vertex buffers in material attribute order, sets index buffer, sets group 1, and calls `drawIndexed`.
+10. If `setShaderTexture` changes a texture, the next update recreates group 1 for affected mesh packets and updates acquired/released texture references.
+11. Material swaps use `shaderGroupBuilder._rebuildSingle`, matching Standard/PBR.
+
+## Babylon.js Equivalence Map
+
+| Babylon ShaderMaterial concept | Lite ShaderMaterial equivalent |
+| --- | --- |
+| Babylon ShaderMaterial concept<br>`new ShaderMaterial(name, scene, route, options)` | Lite ShaderMaterial equivalent<br>`createShaderMaterial({ name, vertexSource, fragmentSource, ...options })` |
+| Babylon ShaderMaterial concept<br>`scene` constructor argument | Lite ShaderMaterial equivalent<br>Not accepted; scene owns meshes/materials via `addToScene` |
+| Babylon ShaderMaterial concept<br>GLSL shader source | Lite ShaderMaterial equivalent<br>Not supported |
+| Babylon ShaderMaterial concept<br>WGSL shader source | Lite ShaderMaterial equivalent<br>Supported |
+| Babylon ShaderMaterial concept<br>`attributes: ["position", "normal", "uv"]` | Lite ShaderMaterial equivalent<br>Same names, validated against Lite supported attributes |
+| Babylon ShaderMaterial concept<br>`uniforms: ["worldViewProjection"]` | Lite ShaderMaterial equivalent<br>Same for known system uniforms |
+| Babylon ShaderMaterial concept<br>Custom `uniforms: ["time"]` | Lite ShaderMaterial equivalent<br>Use `{ name: "time", type: "f32" }` |
+| Babylon ShaderMaterial concept<br>`samplers: ["textureSampler"]` | Lite ShaderMaterial equivalent<br>Same name, bound with `setShaderTexture` |
+| Babylon ShaderMaterial concept<br>`defines: ["MyDefine"]` | Lite ShaderMaterial equivalent<br>`defines: { MyDefine: true }`, emitted as WGSL const |
+| Babylon ShaderMaterial concept<br>`setFloat`, `setVector3`, `setTexture` methods | Lite ShaderMaterial equivalent<br>`setShaderUniform`, `setShaderTexture` standalone functions |
+| Babylon ShaderMaterial concept<br>`needAlphaBlending` | Lite ShaderMaterial equivalent<br>Transparent renderable + blend pipeline |
+| Babylon ShaderMaterial concept<br>`needAlphaTesting` | Lite ShaderMaterial equivalent<br>Hint only; shader performs discard |
+| Babylon ShaderMaterial concept<br>Per-draw thin-instance color opt-out | Lite ShaderMaterial equivalent<br>`useThinInstanceColors: false` on a color-independent ShaderMaterial |
+
+## Dependencies
+
+- `material/material.ts` for base `Material`.
+- `render/renderable.ts` for `MeshGroupBuilder`, `Renderable`, `DrawBinding`.
+- `render/scene-helpers.ts` for scene bind group layout and default pipeline descriptor.
+- `shader/scene-uniforms.ts` for shared scene UBO WGSL.
+- `shader/ubo-layout.ts` for typed UBO packing.
+- `texture/texture-2d.ts` for public texture resources.
+- `resource/gpu-pool.ts` for texture acquire/release and sampler reuse where appropriate.
+- `camera/camera.ts` for active pass view/projection data if a per-mesh system uniform requires projection.
+
+## Test Specification
+
+Use Babylon.js doc playgrounds as BJS reference concepts while keeping Lite source WGSL-only.
+
+| Scene | Reference source | Lite coverage |
+| --- | --- | --- |
+| Scene<br>ShaderMaterial basic color | Reference source<br>Doc playground `#5T8G3I` | Lite coverage<br>Position attribute, `worldViewProjection`, solid fragment color |
+| Scene<br>ShaderMaterial texture sampler | Reference source<br>Doc playground `#D8IDR8` | Lite coverage<br>`uv` attribute, `Texture2D`, sampler pair, `setShaderTexture` |
+| Scene<br>ShaderMaterial uniform update | Reference source<br>Doc playground `#5T8G3I#16` | Lite coverage<br>Custom scalar/vector/color uniform mutation through `setShaderUniform` |
+| Scene<br>ShaderMaterial defines variant | Reference source<br>Derived from doc `defines` option | Lite coverage<br>WGSL const define emitted into prelude and included in pipeline key |
+| Scene<br>ShaderMaterial alpha | Reference source<br>Lite-authored WGSL reference | Lite coverage<br>`needAlphaBlending` and explicit shader-side discard for alpha testing |
+| Scene<br>Thin-instance color opt-out | Reference source<br>Lite unit contract | Lite coverage<br>Override keeps matrix instancing but omits color layout, sync and bind |
+
+Implementation should add lab scenes using the next available scene IDs, plus parity specs and bundle-size ceilings. The BJS side may use Babylon `ShaderMaterial` with GLSL from the docs; the Lite side must use equivalent WGSL and the new Lite `ShaderMaterial`.
+
+Final agent-allowed validation for implementation:
+
+```powershell
+pnpm run lint:fix
+pnpm run lint
+pnpm test
+git diff tests/lite/parity/bundle-size.spec.ts
+git diff reference/lite/
+```
+
+Do not run `pnpm test:perf`.
+
+[![Babylon.js logo](https://doc.babylonjs.com/img/babylonidentity.svg)](https://doc.babylonjs.com/lite/)
+
+[Babylon.js](https://doc.babylonjs.com/) [Babylon Lite](https://doc.babylonjs.com/lite/)
+
+Filter
+
+Filter
+
+- [Welcome](https://doc.babylonjs.com/lite/)
+
+- [Getting Started](https://doc.babylonjs.com/lite/01-getting-started/)
+
+- [Feature Comparison](https://doc.babylonjs.com/lite/02-feature-comparison/)
+
+- [Porting Guide](https://doc.babylonjs.com/lite/03-porting-guide/)
+
+- [Playground](https://doc.babylonjs.com/lite/04-playground/)
+
+- [Headless Null Engine](https://doc.babylonjs.com/lite/05-headless-null-engine/)
+
+- [Architecture](https://doc.babylonjs.com/lite/architecture/00-overview/)

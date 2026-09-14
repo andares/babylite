@@ -1,0 +1,399 @@
+---
+title: Skeleton
+source: https://doc.babylonjs.com/lite/architecture/13-skeleton/
+section: Architecture
+---
+
+[API](https://doc.babylonjs.com/lite/typedoc/)
+
+[Babylon Lite](https://doc.babylonjs.com/lite/)\|
+
+[Architecture](https://doc.babylonjs.com/lite/architecture/)\|
+
+[Skeleton](https://doc.babylonjs.com/lite/architecture/13-skeleton/)
+
+…\|
+
+[Babylon Lite](https://doc.babylonjs.com/lite/)\|
+
+[Architecture](https://doc.babylonjs.com/lite/architecture/)\|
+
+[Skeleton](https://doc.babylonjs.com/lite/architecture/13-skeleton/)
+
+[Babylon.js](https://doc.babylonjs.com/) [Babylon Lite](https://doc.babylonjs.com/lite/)
+
+Filter
+
+Filter
+
+- [Welcome](https://doc.babylonjs.com/lite/)
+
+- [Getting Started](https://doc.babylonjs.com/lite/01-getting-started/)
+
+- [Feature Comparison](https://doc.babylonjs.com/lite/02-feature-comparison/)
+
+- [Porting Guide](https://doc.babylonjs.com/lite/03-porting-guide/)
+
+- [Playground](https://doc.babylonjs.com/lite/04-playground/)
+
+- [Headless Null Engine](https://doc.babylonjs.com/lite/05-headless-null-engine/)
+
+- [Architecture](https://doc.babylonjs.com/lite/architecture/00-overview/)
+
+
+# Module: Skeleton
+
+### Table Of Contents
+
+[Module: Skeleton](https://doc.babylonjs.com/lite/architecture/13-skeleton/#module-skeleton) [Purpose](https://doc.babylonjs.com/lite/architecture/13-skeleton/#purpose) [Public API Surface](https://doc.babylonjs.com/lite/architecture/13-skeleton/#public-api-surface) [Functions](https://doc.babylonjs.com/lite/architecture/13-skeleton/#functions) [Types (from `animation/types.ts`)](https://doc.babylonjs.com/lite/architecture/13-skeleton/#types-from-animationtypests) [Internal Architecture](https://doc.babylonjs.com/lite/architecture/13-skeleton/#internal-architecture) [Bone Texture Format](https://doc.babylonjs.com/lite/architecture/13-skeleton/#bone-texture-format) [Vertex Buffer Layout](https://doc.babylonjs.com/lite/architecture/13-skeleton/#vertex-buffer-layout) [4-Bone vs 8-Bone Skinning](https://doc.babylonjs.com/lite/architecture/13-skeleton/#4-bone-vs-8-bone-skinning) [Per-Frame Bone Matrix Computation — `skeleton-updater.ts`](https://doc.babylonjs.com/lite/architecture/13-skeleton/#per-frame-bone-matrix-computation--skeleton-updaterts) [1\. Reset to Rest Pose](https://doc.babylonjs.com/lite/architecture/13-skeleton/#1-reset-to-rest-pose) [2\. Evaluate Animation Channels](https://doc.babylonjs.com/lite/architecture/13-skeleton/#2-evaluate-animation-channels) [3\. Local → World Matrix Computation](https://doc.babylonjs.com/lite/architecture/13-skeleton/#3-local--world-matrix-computation) [4\. Bone Matrix Upload](https://doc.babylonjs.com/lite/architecture/13-skeleton/#4-bone-matrix-upload) [Pre-Allocated Scratch Buffers](https://doc.babylonjs.com/lite/architecture/13-skeleton/#pre-allocated-scratch-buffers) [Morph Weight Upload](https://doc.babylonjs.com/lite/architecture/13-skeleton/#morph-weight-upload) [Pipeline Configuration](https://doc.babylonjs.com/lite/architecture/13-skeleton/#pipeline-configuration) [Shader Logic](https://doc.babylonjs.com/lite/architecture/13-skeleton/#shader-logic) [State Machine / Lifecycle](https://doc.babylonjs.com/lite/architecture/13-skeleton/#state-machine--lifecycle) [glTF Integration](https://doc.babylonjs.com/lite/architecture/13-skeleton/#gltf-integration) [Bone Control (opt-in)](https://doc.babylonjs.com/lite/architecture/13-skeleton/#bone-control-opt-in) [Semantics](https://doc.babylonjs.com/lite/architecture/13-skeleton/#semantics) [Babylon.js Equivalence Map](https://doc.babylonjs.com/lite/architecture/13-skeleton/#babylonjs-equivalence-map) [Dependencies](https://doc.babylonjs.com/lite/architecture/13-skeleton/#dependencies) [Test Specification](https://doc.babylonjs.com/lite/architecture/13-skeleton/#test-specification) [File Manifest](https://doc.babylonjs.com/lite/architecture/13-skeleton/#file-manifest)
+
+> Package path: `packages/babylon-lite/src/skeleton/`
+
+## Purpose
+
+Provides GPU-accelerated skeletal animation infrastructure. Creates bone textures and vertex buffers from parsed glTF skin data, and provides per-frame bone matrix evaluation and GPU upload. Supports both 4-bone and 8-bone skinning paths. The skeleton system is lazily imported — scenes without skinned meshes never load this module.
+
+## Public API Surface
+
+### Functions
+
+```typescript
+// create-skeleton.ts
+export function createSkeleton(
+    engine: EngineContext,
+    joints: Uint16Array | Uint8Array, // 4 joint indices per vertex (JOINTS_0)
+    weights: Float32Array, // 4 blend weights per vertex (WEIGHTS_0)
+    boneCount: number, // number of bones (joints)
+    boneData: Float32Array, // initial bone matrices (16 floats per bone)
+    joints1?: Uint16Array | Uint8Array | null, // JOINTS_1 for 8-bone skinning
+    weights1?: Float32Array | null // WEIGHTS_1 for 8-bone skinning
+): SkeletonData;
+```
+
+```typescript
+// update-skeleton-bone-matrices.ts
+export function updateSkeletonBoneMatrices(engine: EngineContext, skeleton: SkeletonData, boneMatrices: Float32Array): void;
+```
+
+`updateSkeletonBoneMatrices()` validates the matrix count, updates the skeleton's CPU mirror, and uploads the complete matrix set without exposing the underlying `GPUTexture` to scene code.
+
+```typescript
+// skeleton-updater.ts
+export interface AnimationController {
+    tick(deltaMs: number, device: GPUDevice): void;
+    time: number; // current playback time in seconds
+    playing: boolean;
+    speedRatio: number; // default 1
+    loop: boolean; // default true
+    readonly _debugWorldMat?: Float32Array;
+    readonly _debugNodeNames?: string[];
+}
+
+export function createAnimationController(animData: GltfAnimationData): AnimationController;
+```
+
+### Types (from `animation/types.ts`)
+
+```typescript
+export interface SkeletonData {
+    readonly boneTexture: GPUTexture;
+    readonly boneCount: number;
+    readonly jointsBuffer: GPUBuffer;
+    readonly weightsBuffer: GPUBuffer;
+    readonly joints1Buffer: GPUBuffer | null;
+    readonly weights1Buffer: GPUBuffer | null;
+}
+```
+
+## Internal Architecture
+
+### Bone Texture Format
+
+Each bone is stored as a 4×4 matrix in a 1D `rgba32float` texture:
+
+- **Texture dimensions**: `[boneCount * 4, 1]` (width × height)
+- **Layout**: 4 texels per bone (one per matrix column), each texel = rgba32float (4 floats)
+- **Total**: 16 floats per bone = 64 bytes per bone
+- **Usage flags**: `TEXTURE_BINDING | COPY_DST`
+
+The vertex shader samples this texture using `textureLoad(boneTex, vec2<i32>(boneIdx * 4 + col, 0), 0)` to reconstruct bone matrices.
+
+### Vertex Buffer Layout
+
+Joint indices are expanded from `Uint8Array`/`Uint16Array` to `Uint32Array` because the pipeline reads `uint32x4` vertex format. Both joints and weights buffers use:
+
+- **Usage**: `VERTEX | COPY_DST`
+- **Minimum size**: 4 bytes (to satisfy WebGPU minimum buffer size)
+- **Mapped at creation**: Data is copied via `mappedAtCreation: true` for efficient upload
+
+### 4-Bone vs 8-Bone Skinning
+
+- **4-bone**: Uses `JOINTS_0` \+ `WEIGHTS_0` → `jointsBuffer` \+ `weightsBuffer`
+- **8-bone**: Additionally uses `JOINTS_1` \+ `WEIGHTS_1` → `joints1Buffer` \+ `weights1Buffer`
+- Detection: Presence of `joints1`/`weights1` parameters (sourced from glTF `JOINTS_1`/`WEIGHTS_1` attributes)
+- The skeleton `ShaderFragment` generates different WGSL for 4 vs 8 bones
+
+### Per-Frame Bone Matrix Computation — `skeleton-updater.ts`
+
+The `AnimationController.tick()` method performs these steps each frame:
+
+#### 1\. Reset to Rest Pose
+
+Copy rest-pose TRS from `GltfAnimationData.nodes[]` into pre-allocated `currentTRS` scratch buffer.
+Layout per node: 12 floats (`TRS_STRIDE = 12`):
+
+- `[0..2]` = translation (T\_OFF = 0)
+- `[3..6]` = rotation quaternion xyzw (R\_OFF = 3)
+- `[7..9]` = scale (S\_OFF = 7)
+- `[10..11]` = padding
+
+#### 2\. Evaluate Animation Channels
+
+For each channel in the active clip, evaluate its sampler at current time `t`:
+
+- `PATH_TRANSLATION`: `evaluateSampler(sampler, t, 3, false, currentTRS, base + T_OFF)`
+- `PATH_ROTATION`: `evaluateSampler(sampler, t, 4, true, currentTRS, base + R_OFF)`
+- `PATH_SCALE`: `evaluateSampler(sampler, t, 3, false, currentTRS, base + S_OFF)`
+- `PATH_WEIGHTS`: Evaluate morph weights and upload to GPU buffer (first 16 bytes = weights vec4)
+
+#### 3\. Local → World Matrix Computation
+
+Process nodes in topological order (parents before children):
+
+```javascript
+for each node in topoOrder:
+    localMat[node] = compose(translation, rotation, scale)
+    if node has parent:
+        worldMat[node] = worldMat[parent] * localMat[node]
+    else:
+        worldMat[node] = RH_TO_LH * localMat[node]   // root: apply handedness fix
+```
+
+The `RH_TO_LH` matrix is `diag(-1, 1, 1, 1)` — converts glTF right-handed to BJS left-handed coordinates.
+
+Topological order is computed once at init via `computeTopoOrder()` using iterative DFS.
+
+#### 4\. Bone Matrix Upload
+
+For each skeleton binding:
+
+```javascript
+for each bone i:
+    boneMatrix[i] = invMeshWorld * worldMat[jointNode[i]] * inverseBindMatrix[i]
+```
+
+The multiplication is performed in-place using pre-allocated `boneScratch` arrays:
+
+1. `mat4MultiplyInto(boneData, bi*16, invMeshWorld, 0, worldMat, jointIdx*16)` — temp = invMeshWorld × jointWorld
+2. Manual 4-column matrix multiply: temp × IBM → boneData\[bi\*16\]
+
+Upload via: `device.queue.writeTexture({ texture: boneTexture }, boneData.buffer, { bytesPerRow: texWidth * 16 }, { width: texWidth, height: 1 })`
+
+### Pre-Allocated Scratch Buffers
+
+All scratch memory is allocated once in `createAnimationController()`:
+
+- `currentTRS`: `Float32Array(numNodes * TRS_STRIDE)` — animated TRS per node
+- `localMat`: `Float32Array(numNodes * 16)` — local transform matrices
+- `worldMat`: `Float32Array(numNodes * 16)` — world transform matrices
+- `boneScratch`: `Float32Array(boneCount * 16)` per skeleton — bone matrix output
+- `morphWeightScratch`: `Float32Array(8)` — temporary morph weight evaluation
+- `morphUploadF32`: `Float32Array(4)` — morph weight GPU upload buffer
+
+### Morph Weight Upload
+
+For `PATH_WEIGHTS` channels:
+
+1. Evaluate sampler → `morphWeightScratch[0..targetCount-1]`
+2. Copy to `morphUploadF32[0..3]` (max 4 targets)
+3. Write to each morph binding's GPU buffer: `device.queue.writeBuffer(mb.weightsBuffer, 0, morphUploadF32.buffer, 0, 16)`
+
+Only the first 16 bytes (weights vec4) are written; count/texWidth/rowsPerBand in the morph UBO are immutable.
+
+## Pipeline Configuration
+
+N/A — Skeleton is a CPU-side module. GPU interaction is write-only (texture/buffer uploads). The skeleton `ShaderFragment` (in `shader/fragments/skeleton-fragment.ts`) handles the vertex shader side.
+
+## Shader Logic
+
+N/A — No shaders in this module. The vertex shader skinning code is provided by the skeleton `ShaderFragment`, which reads the bone texture and computes:
+
+```wgsl
+let skinMatrix = w0 * boneMatrix[j0] + w1 * boneMatrix[j1] + w2 * boneMatrix[j2] + w3 * boneMatrix[j3];
+// For 8-bone: + w4 * boneMatrix[j4] + ... + w7 * boneMatrix[j7]
+finalWorld = mesh.world * skinMatrix;
+```
+
+## State Machine / Lifecycle
+
+```javascript
+glTF load
+  │
+  ▼
+extractSkin() ──► GltfSkinData { jointNodes, IBM, jointWorldMatrices, meshWorldMatrix }
+  │
+  ▼
+computeBoneTextureData() ──► Float32Array (rest-pose bone matrices)
+  │
+  ▼
+createSkeleton() ──► SkeletonData { boneTexture, jointsBuffer, weightsBuffer, ... }
+  │                    (attached to mesh.skeleton)
+  ▼
+parseAnimationData() ──► GltfAnimationData { clips, nodes, skeletons, morphBindings }
+  │
+  ▼
+createAnimationController() ──► AnimationController
+  │                               (pre-allocates all scratch buffers)
+  ▼
+createAnimationGroups() ──► AnimationGroup[]
+  │                          (one per clip, wraps controller)
+  ▼
+Per frame: tickAnimation(group, deltaMs, engine)
+  └──► controller.tick() → evaluate → compute matrices → GPU upload
+```
+
+### glTF Integration
+
+The glTF loader (`load-gltf.ts`) integrates skeleton creation:
+
+1. Parses `JOINTS_0`, `WEIGHTS_0` (and optionally `JOINTS_1`, `WEIGHTS_1`) vertex attributes
+2. For nodes with `skin` property, calls `extractSkin()` to get joint data and inverse bind matrices
+3. Calls `computeBoneTextureData()` to compute rest-pose bone matrices
+4. Calls `createSkeleton()` to create GPU resources
+5. Attaches `SkeletonData` to `mesh.skeleton`
+6. After all meshes: `parseAnimationData()` builds `GltfAnimationData` with skeleton bindings pointing to each mesh's `boneTexture`
+
+All skeleton/animation modules are **dynamically imported** — only loaded when glTF contains skins or animations.
+
+## Bone Control (opt-in)
+
+`bone-control.ts` adds a user-facing API to override individual bone transforms on a
+loaded skinned model — the Lite equivalent of manipulating `skeleton.bones[i]` in
+Babylon.js (e.g. "scale a bone to 0 to hide its sub-tree", or pose a bone the playing
+clip does not animate).
+
+It is **opt-in and near-zero bundle cost when unused**: the always-fetched skeleton /
+animation chunk references it only through two null hooks (`bone-control-hooks.ts`).
+Calling `enableBoneControl()` installs the implementation; until then the whole module
+(handle building, eager bake, override application) tree-shakes away.
+
+```typescript
+// Public API (index.ts)
+export function enableBoneControl(): void; // call ONCE before loading
+export function getBoneByName(skeleton: Skeleton, name: string): Bone | undefined;
+export function setBonePosition(skeleton: Skeleton, bone: Bone, x, y, z): void;
+export function setBoneRotationQuaternion(skeleton: Skeleton, bone: Bone, x, y, z, w): void;
+export function setBoneScaling(skeleton: Skeleton, bone: Bone, x, y, z): void;
+export function setBoneVisible(skeleton: Skeleton, bone: Bone, visible: boolean): void; // scale→0 hide, beats animation
+export function clearBoneOverride(skeleton: Skeleton, bone: Bone): void;
+export interface Skeleton {
+    readonly bones: readonly Bone[]; /* +@internal */
+}
+export interface Bone {
+    readonly name: string; /* +@internal */
+}
+```
+
+```typescript
+enableBoneControl(); // ← before loadGltf
+const character = await loadGltf(engine, "character.glb");
+addToScene(scene, character);
+const skel = character.skeletons![0]; // one per glTF skin
+const head = getBoneByName(skel, "Head");
+if (head) setBoneVisible(skel, head, false); // hide the head + everything under it
+```
+
+### Semantics
+
+- **Eager bake.** Each `setBone*` immediately recomputes the asset's bone matrices from
+the rest pose + overrides and uploads the bone textures, so overrides apply even with
+**no** animation playing (static models).
+- **Animation wins per-component — except visibility.** When a clip plays, the per-frame
+tick re-applies the `setBonePosition` / `setBoneRotationQuaternion` / `setBoneScaling`
+overrides right after the rest reset and **before** channel evaluation, so any component
+a clip animates overwrites the override; components the clip does not touch keep it.
+`setBoneVisible(…, false)` is different: it is a visibility control, so it is re-applied
+**after** channel evaluation (zeroing the bone's scale) in every pose path — the
+single-clip controller (`skeleton-updater.ts`), the weighted manager blend
+(`weighted-gltf-mixer.ts` → `uploadTarget`), and the eager bake. Without this a hidden
+bone would pop back the moment a clip with a scale track on it played, and virtually
+every rig in the wild bakes a constant scale track onto **every** bone (all Mixamo
+exports, e.g. Xbot.glb, carry translation + rotation + scale on all 67 joints).
+Visibility is tracked by its own `BoneOverride.mask` bit (8), so showing a bone again
+leaves any explicit `setBoneScaling` override intact.
+- **One handle per skin, re-bakes every mesh.** A glTF skin split across multiple meshes
+(e.g. Xbot's `Beta_Joints` \+ `Beta_Surface`) produces one bone texture _per mesh_ in
+Lite, hence one `Skeleton` handle per skinned mesh on `container.skeletons`. The override
+map is asset-wide and the eager bake re-bakes **all** of the asset's bone textures, so a
+single `setBone*` updates every mesh that shares the skin — matching Babylon.js's shared
+`Skeleton`.
+
+The internal `BoneOverride` map type is kept off the public API surface: public boundaries
+(`createAnimationController`, `GltfAnimationData.boneOverrides`) type it as
+`ReadonlyMap<number, unknown>` and the internal hook casts back.
+
+## Babylon.js Equivalence Map
+
+| Babylon.js | Babylon Lite |
+| --- | --- |
+| Babylon.js<br>`Skeleton` class | Babylon Lite<br>`SkeletonData` plain data + `AnimationController` |
+| Babylon.js<br>`Bone[]` hierarchy | Babylon Lite<br>`NodeRest[]` flat array + `parentIdx` links |
+| Babylon.js<br>`skeleton.getTransformMatrices()` → Float32Array buffer | Babylon Lite<br>Bone texture (`rgba32float`, 4 texels/bone) |
+| Babylon.js<br>`skeleton.prepare()` per frame | Babylon Lite<br>`AnimationController.tick()` |
+| Babylon.js<br>`Mesh.useBones` | Babylon Lite<br>Presence of `mesh.skeleton` property |
+| Babylon.js<br>4-bone: `matricesIndices`, `matricesWeights` | Babylon Lite<br>`jointsBuffer`, `weightsBuffer` |
+| Babylon.js<br>8-bone: `matricesIndicesExtra`, `matricesWeightsExtra` | Babylon Lite<br>`joints1Buffer`, `weights1Buffer` |
+| Babylon.js<br>`bone.setRotationQuaternion()` / `bone.setScale()` / pose a bone | Babylon Lite<br>`setBoneRotationQuaternion()` / `setBoneScaling()` (after `enableBoneControl()`) |
+| Babylon.js<br>Scale a bone to 0 to hide its sub-tree | Babylon Lite<br>`setBoneVisible(skel, bone, false)` |
+| Babylon.js<br>`skeleton.bones.find(b => b.name === ...)` | Babylon Lite<br>`getBoneByName(skeleton, name)` |
+
+## Dependencies
+
+- `../animation/types.js` — `GltfAnimationData`, `SkeletonData`, `AnimationClip`, path/interp constants
+- `../animation/evaluate.js` — `evaluateSampler()` for keyframe interpolation
+- `../math/mat4.js` — `mat4ComposeInto`, `mat4MultiplyInto` for matrix computation
+
+## Test Specification
+
+1. **createSkeleton**: Verify bone texture dimensions = `boneCount * 4` × 1, format `rgba32float`
+2. **4-bone path**: Verify joints expanded to Uint32Array, buffers created with correct sizes
+3. **8-bone path**: Verify `joints1Buffer` and `weights1Buffer` are non-null when JOINTS\_1/WEIGHTS\_1 provided
+4. **Rest-pose bone matrices**: Verify `computeBoneTextureData()` produces identity for trivial cases
+5. **Per-frame evaluation**: Verify `tick()` produces correct bone matrices for a known animation clip
+6. **Topological order**: Verify parents are always processed before children
+7. **RH→LH transform**: Verify root nodes get `diag(-1,1,1,1)` pre-multiplied
+8. **Morph weight upload**: Verify correct 16-byte write to morph weight buffer
+9. **Zero-allocation**: Verify no `new Float32Array` calls in `tick()` hot path
+
+## File Manifest
+
+| File | Purpose |
+| --- | --- |
+| File<br>`create-skeleton.ts` | Purpose<br>GPU resource factory: creates bone texture + joint/weight vertex buffers from parsed glTF skin data |
+| File<br>`update-skeleton-bone-matrices.ts` | Purpose<br>High-level programmatic bone-matrix update that keeps the CPU mirror and GPU texture synchronized |
+| File<br>`skeleton-updater.ts` | Purpose<br>Per-frame animation evaluation: keyframe interpolation → hierarchy traversal → bone matrix computation → GPU upload |
+| File<br>`skeleton-pose.ts` | Purpose<br>Shared bake primitives (topo order, rest reset, world matrices, bone-texture upload) used by the opt-in eager bone-control bake |
+| File<br>`bone-control.ts` | Purpose<br>Opt-in bone-control API: `enableBoneControl`, `getBoneByName`, `setBone*`, eager bake + per-frame override applier |
+| File<br>`bone-control-hooks.ts` | Purpose<br>Two null hooks (`_boneBuilder`, `_boneApplier`) so the always-fetched chunk references bone control without bundling it |
+
+[![Babylon.js logo](https://doc.babylonjs.com/img/babylonidentity.svg)](https://doc.babylonjs.com/lite/)
+
+[Babylon.js](https://doc.babylonjs.com/) [Babylon Lite](https://doc.babylonjs.com/lite/)
+
+Filter
+
+Filter
+
+- [Welcome](https://doc.babylonjs.com/lite/)
+
+- [Getting Started](https://doc.babylonjs.com/lite/01-getting-started/)
+
+- [Feature Comparison](https://doc.babylonjs.com/lite/02-feature-comparison/)
+
+- [Porting Guide](https://doc.babylonjs.com/lite/03-porting-guide/)
+
+- [Playground](https://doc.babylonjs.com/lite/04-playground/)
+
+- [Headless Null Engine](https://doc.babylonjs.com/lite/05-headless-null-engine/)
+
+- [Architecture](https://doc.babylonjs.com/lite/architecture/00-overview/)
