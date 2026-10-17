@@ -233,6 +233,26 @@ skills.sh 注意点：
 - 若仓库转为私有，skills.sh 将不再能索引。
 - 不得提交隐藏安装脚本或凭证收集代码；`bin/babylite.mjs` 的行为约束见约定 10。
 
+### 本地安装与更新（走标准 CLI，不要自写脚本）
+
+本机安装/更新 skill 用生态里的标准 CLI —— `skills`（skills.sh）：
+
+```bash
+npx skills add andares/babylite -g     # 全局：正本副本 → ~/.agents/skills/babylite，
+                                       # 并给探测到的 agent（含 Claude Code）铺相对软链
+npx skills list -g                     # 核对已装
+npx skills update -g                   # 更新全局已装 skill
+npx skills remove -g babylite          # 卸载
+```
+
+- `-g` = 用户级（不带则是项目级 `./.agents/skills/`）；`-y` 跳过确认；`--copy` 改为逐 agent 复制而不软链。
+- 不加 `-a`：CLI 自己探测已装 agent；**不要**用 `-a universal`（它的全局路径是 `~/.config/agents/skills/`，不在约定上）。
+- npm 渠道另有 `npx @andares/babylite install`（把包体复制进 skill 目录；`bin/babylite.mjs`）——
+  它是给"skill 从 npm 包来"这条路径用的，与上一条命令平行，不是第二个自写安装器。
+- **不要把 `~/.agents/skills/babylite` 软链到本仓库**：那会让"已安装的 skill"变成工作区的实时视图，
+  任何改动直接进入 agent 上下文（安装器也会拒绝写穿这种软链目标）。要在改动后自测，装到临时目录：
+  `node bin/babylite.mjs install --to /tmp/babylite-skill-test`。
+
 ### 改动前的检查清单
 
 - 改文档后必须重跑 `pnpm verify`，并人工抽查 3 个 topic 的链接可达。

@@ -68,8 +68,7 @@ npx @andares/babylite install --project  # → ./.agents/skills/babylite (this p
 > project, so npm resolves it to *this* package instead of downloading from the registry, then looks for
 > `./node_modules/.bin/babylite`, which does not exist, and fails with `sh: 1: babylite: not found`
 > (`npx --package …` behaves the same). Run it from any other directory; if you are inside this repo, call
-> `node bin/babylite.mjs install` directly, or use the symlink approach below. That failure is npm's
-> behaviour, not this package's.
+> `node bin/babylite.mjs install` directly. That failure is npm's behaviour, not this package's.
 
 `.agents/skills/` is the shared directory the ecosystem is converging on, so one install is discovered by:
 
@@ -79,9 +78,9 @@ npx @andares/babylite install --project  # → ./.agents/skills/babylite (this p
 
 The installer only writes `SKILL.md` + `references/` into the target directory: **it executes nothing from the
 package and touches no network.** An existing install of this skill is updated in place; a directory it did not
-create is refused unless you pass `--force`. A **symlinked target is always refused**, on purpose: a symlink
-already *is* an installation (usually a live git checkout), and copying through it would rewrite — or delete —
-whatever it points at.
+create is refused unless you pass `--force`. A **symlinked target is always refused**, on purpose: a link is not
+an installation, and copying through it would rewrite — or delete — the directory it points at (typically a git
+checkout, which would end up as a half-broken working tree).
 
 ### Agents outside the shared convention
 
@@ -102,16 +101,28 @@ command above or `/skill install github:andares/babylite`.
 
 ### Manual install / pinning a version
 
-```bash
-git clone git@github.com:andares/babylite.git ~/.agents/skills/babylite
+The ecosystem CLI is the standard path: it keeps one canonical copy in `~/.agents/skills/` and links it into each
+agent's own directory (Claude Code included), then updates or removes it from the same place.
 
-# or symlink an existing clone; `git pull` then takes effect immediately
-ln -s /path/to/babylite ~/.agents/skills/babylite
+```bash
+npx skills add andares/babylite -g   # global; drop -g for a project-level ./.agents/skills/
+npx skills update -g                 # update later
+npx skills list -g                   # what is installed
+npx skills remove -g babylite        # uninstall
 ```
 
-**Editing the docs inside this repo and wanting it live right away? Use the symlink** (no repeated
-re-installs); that is what contributors use. Note that the installer refuses a symlinked target — the link
-itself is the installation, so run `git pull` in the linked directory instead of installing again.
+The npm package carries its own installer for the other channel — a tarball lands in `node_modules/`, which no
+agent scans, so the package has to copy itself out:
+
+```bash
+npx @andares/babylite install            # → ~/.agents/skills/babylite
+npx @andares/babylite install --project  # → ./.agents/skills/babylite
+```
+
+Append `@1.2.3` to that package name to pin an exact version. Both channels install a **real copy**, so nothing
+from a working tree leaks into what agents read, and re-running the command updates it in place — pick one channel
+and stay on it. A symlinked target is refused on purpose: a link is not an installation, and copying through it
+would rewrite or delete the directory behind it.
 
 ### Where skills are read from
 

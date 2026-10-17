@@ -61,7 +61,7 @@ npx @andares/babylite install --project  # → ./.agents/skills/babylite（仅�
 ```
 
 > ⚠️ **别在 babylite 仓库目录里跑 `npx @andares/babylite …`**：包名与当前项目同名，npm 会把它解析成"本地这个包"而不是从 registry 下载，转而去 `./node_modules/.bin/babylite` 找可执行文件，而它并不存在，于是报 `sh: 1: babylite: not found`（`npx --package …` 也一样）。
-> 换到任意其它目录执行即可；若你就在本仓库里，直接 `node bin/babylite.mjs install`，或用下面的软链方式。
+> 换到任意其它目录执行即可；若你就在本仓库里，直接 `node bin/babylite.mjs install`。
 > 该报错是 npm 的行为，与本包无关。
 
 `.agents/skills/` 是当前生态正在收敛的共享目录，装一次这些 agent 就能自动发现：
@@ -71,8 +71,8 @@ npx @andares/babylite install --project  # → ./.agents/skills/babylite（仅�
 - Pi 另外也接受 `~/.pi/agent/skills/` 与 `<项目>/.pi/skills/`，DSH 另外也接受 `~/.dsh/skills/`；一般不必用到
 
 安装器只往目标目录写 `SKILL.md` + `references/`，**不执行包内脚本、不联网**。目标是本 skill 的既有安装会原地更新；是别人的目录则拒绝，需 `--force`。
-**目标是符号链接时一律拒绝**，这是有意的：软链本身**就是**一种安装（通常是跟着 `git pull` 走的 checkout），
-往链接里复制会改写——甚至删掉——链接背后的那个目录。
+**目标是符号链接时一律拒绝**，这是有意的：软链不是安装，往它里面复制会改写——甚至删掉——链接指向的那个目录
+（通常是一个 git checkout，会被弄成半残的工作区）。
 
 ### 不在共享约定里的 agent
 
@@ -89,15 +89,26 @@ Claude Code（`~/.claude/skills/`）等用它。DSH 不在该 CLI 的 agent 列�
 
 ### 手动安装 / 想固定版本
 
-```bash
-git clone git@github.com:andares/babylite.git ~/.agents/skills/babylite
+标准入口是生态里的 `skills` CLI：它把一份**正本副本**放在 `~/.agents/skills/`，再给每个 agent 自己的目录
+（含 Claude Code）铺相对软链；更新与卸载也从同一个地方管。
 
-# 或从已有克隆软链过去，git pull 后即时生效
-ln -s /path/to/babylite ~/.agents/skills/babylite
+```bash
+npx skills add andares/babylite -g   # 全局；去掉 -g 则装到项目级 ./.agents/skills/
+npx skills update -g                 # 以后更新
+npx skills list -g                   # 看装了什么
+npx skills remove -g babylite        # 卸载
 ```
 
-**在本仓库里改了文档想立刻生效，就用软链**（不必反复重装副本）；贡献者本地推荐这一种。
-注意安装器会拒绝这种软链目标：链接本身就是安装，要更新就在被链接的目录里 `git pull`，不要再跑一次安装。
+npm 渠道另有包自带的安装器——tarball 落在 `node_modules/`，没有 agent 会扫那里，所以包必须自己把内容复制出去：
+
+```bash
+npx @andares/babylite install            # → ~/.agents/skills/babylite
+npx @andares/babylite install --project  # → ./.agents/skills/babylite
+```
+
+把 `@1.2.3` 接在包名后可以固定某个版本。两条渠道装的都是**真正的副本**（工作区改动不会泄进 agent 读到的东西），
+重跑命令即原地更新——选一条渠道走，不要混用。目标是软链时会拒绝：软链不算安装，往它里面复制会改写/删掉
+链接背后的目录。
 
 ### 目录对照
 
