@@ -18,9 +18,9 @@
 > 所有人都能看到的状态。本仓库已经因为一个 agent 在 `/tmp` 副本里跑 release 脚本，误发了
 > `@andares/babylite@1.0.1`（2026-09-14）——**在副本里跑同样是真的发布到公开 registry**。
 >
-> 这条不只是约定，`scripts/publish.mjs` 已经做成机制：**没有交互式终端就直接拒绝执行**（agent / CI 属于这种），
-> 有终端时还要再输入一次确认。`--yes` 与 `BABYLITE_RELEASE_CONFIRM=1` 是给人类脚本化发布用的，
-> **agent 一律不得设置**。
+> 这条**只靠纪律执行，脚本不自设门**：2026-10-17 按所有者要求拆掉了脚本里的终端检查与确认提问——
+> 每次发版多一道交互的代价高于它挡住的错误。也就是说，**本文件就是唯一的约束**，没有机制兜底：
+> 读到这条即视为已知悉，而越界一次就是真实、不可回滚的公开操作（npm 版本号永久占用、远端状态立刻改变）。
 
 ## 项目是什么
 
@@ -123,6 +123,7 @@ Babylon Lite 是 Babylon.js 的 WebGPU 原生渲染器，API 形态是**工厂�
     创建或删除远端 tag / GitHub Release（含 `pnpm gh-release`），也不得运行 `pnpm release`、`pnpm publish`、`npm publish`、
     `pnpm unpublish`——包括在临时目录、副本、容器、worktree 里"为了验证"地跑。
     agent 做到**本地 commit** 为止，然后向人类报告并请求推送。
+    **脚本已不自设门**（见文首「发布权」）：没有第二道保险，这条禁令完全依赖纪律执行。
     细节见文首[「发布权」](#-发布权只能由仓库所有者人类执行)一节。
 13. **README 是一对**：`README.md` 是英文（默认，GitHub / npm 展示的那份），`README.zh-CN.md` 是中文版；
     两版章节结构保持一致、改动同步更新，并在文首**互相链接**。
@@ -167,13 +168,14 @@ pnpm verify          # 等价 node scripts/verify-docs.mjs
 
 ### 发布与分发
 
-> ⛔ 下面这些命令**只能由仓库所有者（人类）在本机终端执行**。agent 只允许跑 `--dry-run` 形式与
+> ⛔ 下面这些命令**只能由仓库所有者（人类）执行**。agent 只允许跑 `--dry-run` 形式与
 > `pnpm verify`（见文首[「发布权」](#-发布权只能由仓库所有者人类执行)）。
 
 ```bash
 pnpm release patch                  # 1.0.1 → 1.0.2（也支持 minor / major）
 pnpm release patch --dry-run        # 只打印计划，不改任何东西（agent 可以跑）
 pnpm release patch --no-push        # 发布到 registry，但不 push、不建 GitHub Release
+pnpm release patch --yes            # 兼容占位：现在不再提问/不检查终端，加不加都一样
 pnpm gh-release v1.0.1              # 给已推送的 tag 补建 GitHub Release（幂等）
 pnpm gh-release v1.0.1 --update     # 重写已存在 Release 的 notes（取自 CHANGELOG.md 对应小节）
 pnpm tag-current                    # 仅给当前版本打本地 tag（已存在则跳过）
@@ -185,7 +187,7 @@ pnpm tag-current                    # 仅给当前版本打本地 tag（已存�
 （自上个 tag 以来的提交主题；与 Release notes 同一段范围）→ `chore: release vX.Y.Z` commit
 → `tag-current.mjs` 打 `vX.Y.Z` → `pnpm publish --no-git-checks`（`prepublishOnly` 会再跑一次校验）
 → 仅在发布成功后 push 分支与 tag，再调 `scripts/github-release.mjs` 建 GitHub Release
-（`GITHUB_TOKEN`，best-effort，失败只警告；notes 由 GitHub 按上一个 tag 之后的提交自动生成）。
+（`GITHUB_TOKEN`，best-effort，失败只警告；notes 取 `CHANGELOG.md` 对应小节）。
 
 预检存在的理由：registry 写入发生在 push 之前，push 失败会把版本停在"npm 有、GitHub 没有"的状态，
 所以拿不到 push 权限、或远端已经领先时，要在改任何东西之前就停下来。
@@ -204,9 +206,9 @@ classic token 要 `repo`（公开仓库 `public_repo` 即可）。`github-releas
 "你这颗 token 该加什么权限"，并给出无 token 备选（`gh auth login` + `gh release create <tag> --generate-notes`）。
 此时 npm 已发布、push 已成功，只差 Release，补建即可。
 
-**在 agent / 管道 / 包装脚本里跑 `pnpm release` 会被直接拒绝**（非交互终端，见约定 12）：
-此时它**什么都没改**；请在自己的终端重跑，而不是先 `git push` 再 release——
-最后一步 push 本来就在脚本里，先推只会把"未发布"的提交放到默认分支上（skills.sh 读的正是默认分支）。
+**`git push && pnpm release` 不是流程**：push 本来就在 release 脚本的最后一步，先推只会把"未发布"的提交
+放到默认分支上（skills.sh 读的正是默认分支）。直接跑 `pnpm release <bump>` 即可——脚本不再提问、也不检查终端；
+**agent 不得执行发布与 push**，这是本文件的常驻规则（见文首「发布权」与约定 12）。
 
 发布失败回滚：`git tag -d vX.Y.Z && git reset --hard HEAD~1`。
 

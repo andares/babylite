@@ -163,9 +163,9 @@ bump `package.json` 与 `SKILL.md` 版本、在 `CHANGELOG.md` 顶部插入本�
 发布后 skills.sh 会随仓库同步。
 细节与回滚见 `AGENTS.md`。
 
-请在**自己的终端**里跑发布：它需要一个真正的 TTY，在 agent / 管道 / 包装脚本里会在
-"什么都还没 bump、没打 tag、没发布"的状态下直接拒绝。脚本自己会 push 分支与 tag，
-所以 `git push && pnpm release patch` 不是正确的流程 —— 只跑 release 就够了。
+脚本自己会 push 分支与 tag，所以 `git push && pnpm release patch` 不是正确的流程 —— 只跑 release 就够了。
+发布是仓库所有者的操作；脚本不再提问、也不检查终端，而**agent 不得执行发布与 push** 这条规则
+常驻在 `AGENTS.md` 里。
 
 > ⛔ 推送与发布是仓库所有者的专属操作。agent 可以跑 `pnpm verify`、`pack --dry-run`、`pnpm release --dry-run`，
 > 也可以本地 commit——但不得改动公开状态（`git push`、`pnpm publish`、GitHub Release 等）。

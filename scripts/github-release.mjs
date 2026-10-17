@@ -17,15 +17,15 @@
  *   pnpm gh-release v1.0.1            # create the missing Release for v1.0.1
  *   pnpm gh-release v1.0.1 --dry-run  # print the plan, touch nothing
  *
- * HUMAN-ONLY, like `pnpm release` (see AGENTS.md): it changes public state, so
- * it needs a real terminal unless `--yes` / BABYLITE_RELEASE_CONFIRM=1 says the
- * owner deliberately scripted it. The token must be able to write Releases:
- * fine-grained needs `Contents: Read and write`, classic needs `repo`.
+ * HUMAN-ONLY, like `pnpm release` (see AGENTS.md): it changes public state, and
+ * who runs it is a **rule, not a lock** — the terminal check and the confirmation
+ * prompt were removed together with those in publish.mjs. The token must be able
+ * to write Releases: fine-grained needs `Contents: Read and write`, classic
+ * needs `repo`.
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -47,7 +47,6 @@ const positional = args.filter((a) => !a.startsWith('--'));
 const KNOWN = ['--dry-run', '--yes', '--update'];
 const unknown = flags.filter((f) => !KNOWN.includes(f));
 const dryRun = flags.includes('--dry-run');
-const assumeYes = flags.includes('--yes');
 const update = flags.includes('--update');
 const tag = positional[0];
 
@@ -56,7 +55,7 @@ if (tag === undefined || positional.length !== 1 || unknown.length > 0 || !/^v\d
     `${C.red}${C.bold}Usage: pnpm gh-release <vX.Y.Z> [--dry-run] [--yes] [--update]${C.reset}` +
       `\n  Create the GitHub Release for <tag> (the tag must already be pushed to origin).` +
       `\n  --dry-run  preview the plan and the notes without calling the API.` +
-      `\n  --yes      skip the interactive confirmation (a human-only operation, see AGENTS.md).` +
+      `\n  --yes      accepted for compatibility; the call no longer asks or checks anything.` +
       `\n  --update   an existing Release keeps its notes; this rewrites them from CHANGELOG.md.`,
   );
   process.exit(1);
@@ -192,26 +191,9 @@ if (!token) {
   process.exit(1);
 }
 
-// Same human-only gate as `pnpm release`: creating a Release changes public state.
-if (!assumeYes && process.env.BABYLITE_RELEASE_CONFIRM !== '1') {
-  if (process.stdin.isTTY !== true) {
-    console.error(
-      `${C.red}Refusing to create a Release: no interactive terminal.${C.reset}` +
-        `\n  Publishing to the public GitHub repo is reserved for the repository owner (see AGENTS.md).` +
-        `\n  If you are human and really mean to script this, set BABYLITE_RELEASE_CONFIRM=1.`,
-    );
-    process.exit(1);
-  }
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const answer = (await rl.question(`Create the GitHub Release ${tag} in ${ghRepo}? [y/N] `))
-    .trim()
-    .toLowerCase();
-  rl.close();
-  if (answer !== 'y' && answer !== 'yes') {
-    console.log(`${C.yellow}Aborted — nothing changed.${C.reset}`);
-    process.exit(1);
-  }
-}
+// Who may run this is a rule, not a lock (see AGENTS.md), exactly as in
+// publish.mjs: the terminal check and the confirmation prompt were removed on
+// the owner's instruction.
 
 // Idempotency first: an existing Release means there is nothing to repair —
 // unless --update was passed, which rewrites its notes from CHANGELOG.md (the

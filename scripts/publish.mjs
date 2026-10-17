@@ -14,14 +14,15 @@
  * Exactly one of `major | minor | patch` is required. A higher-level bump
  * zeroes every lower level. Flags: `--dry-run` (plan only), `--no-push`
  * (publish to the registry but skip the GitHub push/release step),
- * `--force-publish` (ignore the origin identity check), `--yes` (skip the
- * interactive confirmation).
+ * `--force-publish` (ignore the origin identity check), `--yes` (accepted for
+ * compatibility only — see below).
  *
- * HUMAN-ONLY (see AGENTS.md): a published npm version can never be reused, so
- * this script refuses to run without an interactive terminal and then asks for
- * explicit confirmation. `--yes` or BABYLITE_RELEASE_CONFIRM=1 is only for a
- * human who has deliberately decided to script a release — an agent must never
- * set either.
+ * HUMAN-ONLY (see AGENTS.md): who may run a release is a **rule, not a lock**.
+ * There used to be a terminal check plus a confirmation prompt here; both were
+ * removed on the owner's instruction — one friction point per release cost more
+ * than the mistake it guarded against. Agents do not run `pnpm release`, `git
+ * push`, or anything else that changes public state; that prohibition lives in
+ * AGENTS.md, which is what agents read before touching this repository.
  *
  * Flow:
  *   validate args → warn on dirty git tree (non-blocking)
@@ -60,7 +61,6 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -85,7 +85,6 @@ const positional = args.filter((a) => !a.startsWith('--'));
 const dryRun = flags.includes('--dry-run');
 const skipPush = flags.includes('--no-push');
 const forcePublish = flags.includes('--force-publish');
-const assumeYes = flags.includes('--yes');
 
 const KNOWN = ['--dry-run', '--no-push', '--force-publish', '--yes'];
 const UNKNOWN = flags.filter((f) => !KNOWN.includes(f));
@@ -96,7 +95,7 @@ if (!BUMPS.includes(positional[0]) || positional.length !== 1 || UNKNOWN.length 
       `\n  --dry-run        preview the plan without changing anything.` +
       `\n  --no-push        publish to the registry but skip git push and the GitHub Release.` +
       `\n  --force-publish  publish even when origin does not match package.json repository.url.` +
-      `\n  --yes            skip the interactive confirmation (a human-only operation, see AGENTS.md).`,
+      `\n  --yes            accepted for compatibility; a release no longer asks or checks anything.`,
   );
   process.exit(1);
 }
@@ -178,7 +177,7 @@ if (dryRun) {
     console.log(
       `  6. git push origin ${branch} --tags + GitHub Release v${next}` +
         (process.env.GITHUB_TOKEN
-          ? `（scripts/github-release.mjs，generate_release_notes）`
+          ? `（scripts/github-release.mjs，notes 取自 CHANGELOG.md）`
           : `（未设置 GITHUB_TOKEN → 仅 push，Release 跳过；稍后可 pnpm gh-release v${next} 补建）`),
     );
   }
@@ -213,34 +212,11 @@ if (!forcePublish) {
   }
 }
 
-// Publishing is a human-only operation (see AGENTS.md): a published version can
-// never be reused, so an agent or CI job must not be able to trigger it. Refuse
-// to run without an interactive terminal; on a terminal, ask once for explicit
-// confirmation. `--yes` or BABYLITE_RELEASE_CONFIRM=1 is only for a human who
-// has deliberately decided to script the release.
-const envConfirmed = process.env.BABYLITE_RELEASE_CONFIRM === '1';
-if (!envConfirmed && !assumeYes) {
-  if (process.stdin.isTTY !== true) {
-    console.error(
-      `${C.red}Refusing to publish: no interactive terminal.${C.reset}` +
-        `\n  The registry cannot un-publish, so a release needs a human at a real terminal —` +
-        `\n  running this through an agent, a pipe or a wrapper script lands here.` +
-        `\n  Nothing has been bumped, tagged or published.` +
-        `\n  Re-run it in your own shell; or, to script it deliberately, set` +
-        `\n  BABYLITE_RELEASE_CONFIRM=1 (a human-only decision — see AGENTS.md).`,
-    );
-    process.exit(1);
-  }
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const answer = (await rl.question(`Publish ${pkg.name}@${next} to the npm registry? [y/N] `))
-    .trim()
-    .toLowerCase();
-  rl.close();
-  if (answer !== 'y' && answer !== 'yes') {
-    console.log(`${C.yellow}Aborted — nothing changed.${C.reset}`);
-    process.exit(1);
-  }
-}
+// Who may run this is a rule, not a lock (see AGENTS.md): releases and pushes
+// are human-only, and the agent side of that is enforced by the document every
+// agent reads first. The terminal check and the confirmation prompt that used
+// to live here were removed on the owner's instruction — the per-release
+// friction cost more than the mistake it guarded against.
 
 // The registry write happens before the git push, so a push that cannot succeed
 // would strand the version on npm with no tag and no Release on GitHub. The
@@ -391,8 +367,7 @@ if (skipPush) {
     );
   }
   // The Release itself lives in scripts/github-release.mjs — the same helper
-  // `pnpm gh-release <tag>` runs. `--yes` is passed because the human gate above
-  // has already been cleared, so the helper must not ask a second time.
+  // `pnpm gh-release <tag>` runs.
   if (!process.env.GITHUB_TOKEN) {
     console.warn(
       `${C.yellow}未设置 GITHUB_TOKEN — 跳过 GitHub Release 创建。` +
@@ -401,7 +376,7 @@ if (skipPush) {
   } else {
     const rel = run(
       process.execPath,
-      [join(ROOT, 'scripts', 'github-release.mjs'), `v${next}`, '--yes'],
+      [join(ROOT, 'scripts', 'github-release.mjs'), `v${next}`],
       { allowFailure: true },
     );
     if (rel.status !== 0) {

@@ -184,9 +184,9 @@ commit + tag → `pnpm publish` → push branch and tag → create the GitHub Re
 `pnpm gh-release vX.Y.Z` repairs it afterwards (idempotent: an existing Release is left alone). skills.sh picks the change up once the public repo is pushed.
 Details and rollback: `AGENTS.md`.
 
-Run the release from your own terminal: it needs a real TTY, so an agent, a pipe or a wrapper script gets a
-refusal *before* anything is bumped, tagged or published. The script pushes the branch and tag itself, so
-`git push && pnpm release patch` is not the flow — the release command alone is enough.
+The script pushes the branch and tag itself, so `git push && pnpm release patch` is not the flow — the release
+command alone is enough. Releasing is the owner's job; the flow no longer prompts or checks for a terminal, and
+that agents must not run it (or push) is a standing rule in `AGENTS.md`.
 
 > ⛔ Pushing and publishing are reserved for the repository owner. Agents may run `pnpm verify`, `pack --dry-run`
 > and `pnpm release --dry-run`, and may commit locally — nothing that changes public state.
