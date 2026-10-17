@@ -189,9 +189,14 @@ pnpm tag-current                    # 仅给当前版本打本地 tag（已存�
 预检存在的理由：registry 写入发生在 push 之前，push 失败会把版本停在"npm 有、GitHub 没有"的状态，
 所以拿不到 push 权限、或远端已经领先时，要在改任何东西之前就停下来。
 
-**Release 缺失怎么补**：`pnpm gh-release vX.Y.Z`（`scripts/github-release.mjs`）是幂等的——
-已存在就跳过；tag 不在 `origin` 上则拒绝（否则 API 会拿默认分支 HEAD 新建一个 tag，把 Release 指到错提交）。
+**Release 缺失怎么补**：`pnpm gh-release vX.Y.Z`（`scripts/github-release.mjs`）是幂等的——已存在就跳过；tag 不在 `origin` 上则拒绝（否则 API 会拿默认分支 HEAD 新建一个 tag，把 Release 指到错提交）。
 典型来源：发布时没设 `GITHUB_TOKEN`，或版本早于这一步存在（`v1.0.1` 就是"有 tag、没有 Release"）。
+
+**Token 权限（漏掉就会 403）**：`GITHUB_TOKEN` 必须能**写** Release —— fine-grained token 要
+`Contents: Read and write`（Releases 属于 Contents 权限；只给读权限时仓库/读操作都能过，唯独写 Release 403），
+classic token 要 `repo`（公开仓库 `public_repo` 即可）。`github-release.mjs` 会把 401/403 翻译成
+"你这颗 token 该加什么权限"，并给出无 token 备选（`gh auth login` + `gh release create <tag> --generate-notes`）。
+此时 npm 已发布、push 已成功，只差 Release，补建即可。
 
 **在 agent / 管道 / 包装脚本里跑 `pnpm release` 会被直接拒绝**（非交互终端，见约定 12）：
 此时它**什么都没改**；请在自己的终端重跑，而不是先 `git push` 再 release——

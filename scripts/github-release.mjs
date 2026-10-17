@@ -19,7 +19,8 @@
  *
  * HUMAN-ONLY, like `pnpm release` (see AGENTS.md): it changes public state, so
  * it needs a real terminal unless `--yes` / BABYLITE_RELEASE_CONFIRM=1 says the
- * owner deliberately scripted it. Requires GITHUB_TOKEN with Contents: write.
+ * owner deliberately scripted it. The token must be able to write Releases:
+ * fine-grained needs `Contents: Read and write`, classic needs `repo`.
  */
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -108,6 +109,28 @@ function api(method, url, { token, body } = {}) {
   return { status: res.status, code, body: lines.join('\n') };
 }
 
+/**
+ * Explains a 401/403 in terms of what this token actually needs, without ever
+ * printing the token itself. Fine-grained tokens are the common trap: Releases
+ * live under the "Contents" permission, and read-only access still passes the
+ * repo/read checks below.
+ */
+function authHint(token) {
+  let kind;
+  if (token.startsWith('github_pat_')) kind = 'this is a fine-grained token (github_pat_…) and it needs';
+  else if (token.startsWith('ghp_')) kind = 'this is a classic token (ghp_…) and it needs';
+  else kind = 'this token needs';
+  return (
+    `\n  ${C.yellow}The token cannot write Releases: ${kind}${C.reset}` +
+    `\n    fine-grained: \`Contents: Read and write\` for ${ghRepo} — Releases live under Contents` +
+    `\n                 https://github.com/settings/personal-access-tokens` +
+    `\n    classic:      the \`repo\` scope (\`public_repo\` is enough for a public repo)` +
+    `\n                 https://github.com/settings/tokens/new?scopes=repo` +
+    `\n  Without any token:  gh auth login -h github.com -w` +
+    `\n                      env -u GITHUB_TOKEN gh release create ${tag} --generate-notes`
+  );
+}
+
 if (dryRun) {
   console.log(`${C.dim}--dry-run -- nothing sent. Would create:${C.reset}`);
   console.log(`  GitHub Release ${C.bold}${tag}${C.reset} in ${ghRepo}`);
@@ -151,6 +174,10 @@ if (!assumeYes && process.env.BABYLITE_RELEASE_CONFIRM !== '1') {
 
 // Idempotency first: an existing Release means there is nothing to repair.
 const existing = api('GET', `https://api.github.com/repos/${ghRepo}/releases/tags/${tag}`, { token });
+if (existing.code === '401' || existing.code === '403') {
+  console.error(`${C.red}GitHub rejected the token (HTTP ${existing.code}).${C.reset}${authHint(token)}`);
+  process.exit(1);
+}
 if (existing.code === '200') {
   console.log(`${C.green}Release ${tag} already exists in ${ghRepo} — nothing to do.${C.reset}`);
   process.exit(0);
@@ -179,6 +206,7 @@ if (created.status === 0 && created.code === '201') {
 
 console.error(
   `${C.red}Failed to create the Release (HTTP ${created.code || '?'}).${C.reset}` +
-    `\n  ${created.body.split('\n').slice(0, 3).join('\n  ')}`,
+    `\n  ${created.body.split('\n').slice(0, 3).join('\n  ')}` +
+    (created.code === '401' || created.code === '403' ? authHint(token) : ''),
 );
 process.exit(1);

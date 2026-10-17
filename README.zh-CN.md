@@ -157,8 +157,9 @@ pnpm tag-current                 # 仅给当前版本打本地 tag（已存在�
 一条命令完成：push 预检（`git push --dry-run`，push 不通就在改任何东西之前停下）→ 校验 →
 bump `package.json` 与 `SKILL.md` 版本、在 `CHANGELOG.md` 顶部插入本版条目 → commit + tag →
 `pnpm publish` → push 分支与 tag → 建 GitHub Release。changelog 条目与 Release notes 是同一段范围
-（上一个 tag 之后的提交）。`GITHUB_TOKEN` 缺失或创建失败只警告（registry 已发布的版本不回退），
-事后用 `pnpm gh-release vX.Y.Z` 补建即可 —— 已存在则跳过。发布后 skills.sh 会随仓库同步。
+（上一个 tag 之后的提交）。`GITHUB_TOKEN` 需要能**写** Release（fine-grained 要 `Contents: Read and write`，classic 要 `repo`）；
+缺失或创建失败只警告（registry 已发布的版本不回退），事后用 `pnpm gh-release vX.Y.Z` 补建即可 —— 已存在则跳过。
+发布后 skills.sh 会随仓库同步。
 细节与回滚见 `AGENTS.md`。
 
 请在**自己的终端**里跑发布：它需要一个真正的 TTY，在 agent / 管道 / 包装脚本里会在
