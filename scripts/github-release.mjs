@@ -44,18 +44,20 @@ const C = {
 const args = process.argv.slice(2).filter((a) => a !== '--');
 const flags = args.filter((a) => a.startsWith('--'));
 const positional = args.filter((a) => !a.startsWith('--'));
-const KNOWN = ['--dry-run', '--yes'];
+const KNOWN = ['--dry-run', '--yes', '--update'];
 const unknown = flags.filter((f) => !KNOWN.includes(f));
 const dryRun = flags.includes('--dry-run');
 const assumeYes = flags.includes('--yes');
+const update = flags.includes('--update');
 const tag = positional[0];
 
 if (tag === undefined || positional.length !== 1 || unknown.length > 0 || !/^v\d+\.\d+\.\d+$/.test(tag)) {
   console.error(
-    `${C.red}${C.bold}Usage: pnpm gh-release <vX.Y.Z> [--dry-run] [--yes]${C.reset}` +
+    `${C.red}${C.bold}Usage: pnpm gh-release <vX.Y.Z> [--dry-run] [--yes] [--update]${C.reset}` +
       `\n  Create the GitHub Release for <tag> (the tag must already be pushed to origin).` +
-      `\n  --dry-run  preview the plan without calling the API.` +
-      `\n  --yes      skip the interactive confirmation (a human-only operation, see AGENTS.md).`,
+      `\n  --dry-run  preview the plan and the notes without calling the API.` +
+      `\n  --yes      skip the interactive confirmation (a human-only operation, see AGENTS.md).` +
+      `\n  --update   an existing Release keeps its notes; this rewrites them from CHANGELOG.md.`,
   );
   process.exit(1);
 }
@@ -131,13 +133,52 @@ function authHint(token) {
   );
 }
 
+/**
+ * Release notes from CHANGELOG.md: the section of `tag`, which `pnpm release`
+ * wrote from the commit subjects of the very same range. GitHub's own
+ * `generate_release_notes` only lists merged pull requests, and this repository
+ * pushes straight to master — the generated body came out as a bare compare
+ * link, so the changelog is the better source. Returns '' when there is no
+ * section, and the caller falls back to GitHub's generator.
+ */
+function notesFromChangelog(tag) {
+  const version = tag.replace(/^v/, '');
+  let changelog;
+  try {
+    changelog = readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8');
+  } catch {
+    return '';
+  }
+  const section = changelog.split(/^## \[/m).find((part) => part.startsWith(`${version}]`));
+  if (section === undefined) return '';
+  // Keep the bullet block verbatim from its first `- ` line: wrapped bullets have
+  // continuation lines that must not be dropped.
+  const lines = section.split('\n').slice(1);
+  const firstBullet = lines.findIndex((line) => line.trimStart().startsWith('- '));
+  if (firstBullet === -1) return '';
+  const bullets = lines.slice(firstBullet).join('\n').trim();
+  return `${bullets}\n\n**Full changelog:** https://github.com/${ghRepo}/blob/${tag}/CHANGELOG.md`;
+}
+
+const notes = notesFromChangelog(tag);
+const payload =
+  notes === ''
+    ? { tag_name: tag, name: tag, generate_release_notes: true }
+    : { tag_name: tag, name: tag, body: notes };
+
 if (dryRun) {
   console.log(`${C.dim}--dry-run -- nothing sent. Would create:${C.reset}`);
   console.log(`  GitHub Release ${C.bold}${tag}${C.reset} in ${ghRepo}`);
   console.log(`  POST https://api.github.com/repos/${ghRepo}/releases`);
-  console.log(`  body: {"tag_name":"${tag}","name":"${tag}","generate_release_notes":true}`);
+  console.log(`  body: ${JSON.stringify(payload)}`);
   console.log(
-    `${C.dim}  Requires GITHUB_TOKEN (Contents: write); an existing Release for ${tag} is left alone.${C.reset}`,
+    notes === ''
+      ? `${C.dim}  notes: GitHub's generator (no CHANGELOG section for ${tag})${C.reset}`
+      : `${C.dim}  notes: ${notes.split('\n').filter(Boolean).length} lines from CHANGELOG.md${C.reset}`,
+  );
+  console.log(
+    `${C.dim}  Requires GITHUB_TOKEN (Contents: write); an existing Release for ${tag} is left alone` +
+      ` unless --update is passed.${C.reset}`,
   );
   process.exit(0);
 }
@@ -146,7 +187,7 @@ const token = process.env.GITHUB_TOKEN;
 if (!token) {
   console.error(
     `${C.red}GITHUB_TOKEN is not set — cannot create the Release.${C.reset}` +
-      `\n  Use a fine-grained token with Contents: write on ${ghRepo}, then re-run.`,
+      `\n  Use a token with Contents: write (fine-grained) or the \`repo\` scope (classic) on ${ghRepo}.`,
   );
   process.exit(1);
 }
@@ -172,15 +213,54 @@ if (!assumeYes && process.env.BABYLITE_RELEASE_CONFIRM !== '1') {
   }
 }
 
-// Idempotency first: an existing Release means there is nothing to repair.
+// Idempotency first: an existing Release means there is nothing to repair —
+// unless --update was passed, which rewrites its notes from CHANGELOG.md (the
+// earlier releases were created before the notes had a source at all).
 const existing = api('GET', `https://api.github.com/repos/${ghRepo}/releases/tags/${tag}`, { token });
 if (existing.code === '401' || existing.code === '403') {
   console.error(`${C.red}GitHub rejected the token (HTTP ${existing.code}).${C.reset}${authHint(token)}`);
   process.exit(1);
 }
-if (existing.code === '200') {
+if (existing.code === '200' && !update) {
   console.log(`${C.green}Release ${tag} already exists in ${ghRepo} — nothing to do.${C.reset}`);
+  console.log(`${C.dim}   --update rewrites its notes from CHANGELOG.md.${C.reset}`);
   process.exit(0);
+}
+if (existing.code === '200' && update) {
+  if (notes === '') {
+    console.error(
+      `${C.red}CHANGELOG.md has no section for ${tag} — nothing to write.${C.reset}` +
+        `\n  Add the section (or drop --update to leave the existing Release alone).`,
+    );
+    process.exit(1);
+  }
+  let id;
+  try {
+    id = JSON.parse(existing.body).id;
+  } catch {
+    id = undefined;
+  }
+  if (typeof id !== 'number') {
+    console.error(
+      `${C.red}Could not read the Release id from the API response.${C.reset}` +
+        `\n  ${existing.body.split('\n').slice(0, 3).join('\n  ')}`,
+    );
+    process.exit(1);
+  }
+  const patched = api('PATCH', `https://api.github.com/repos/${ghRepo}/releases/${id}`, {
+    token,
+    body: { body: notes },
+  });
+  if (patched.status === 0 && patched.code === '200') {
+    console.log(`${C.green}✅ Release ${tag} notes updated from CHANGELOG.md${C.reset}`);
+    process.exit(0);
+  }
+  console.error(
+    `${C.red}Failed to update the Release (HTTP ${patched.code || '?'}).${C.reset}` +
+      `\n  ${patched.body.split('\n').slice(0, 3).join('\n  ')}` +
+      (patched.code === '401' || patched.code === '403' ? authHint(token) : ''),
+  );
+  process.exit(1);
 }
 
 // The API would happily create a *new* tag from the default branch if the tag
@@ -194,13 +274,14 @@ if (remote.stdout.toString().trim() === '') {
   process.exit(1);
 }
 
-const created = api('POST', `https://api.github.com/repos/${ghRepo}/releases`, {
-  token,
-  body: { tag_name: tag, name: tag, generate_release_notes: true },
-});
+const created = api('POST', `https://api.github.com/repos/${ghRepo}/releases`, { token, body: payload });
 if (created.status === 0 && created.code === '201') {
   console.log(`${C.green}✅ GitHub Release ${tag} created in ${ghRepo}${C.reset}`);
-  console.log(`${C.dim}   Notes: generated by GitHub from the commits since the previous tag.${C.reset}`);
+  console.log(
+    notes === ''
+      ? `${C.dim}   Notes: generated by GitHub (add a CHANGELOG.md section for richer notes).${C.reset}`
+      : `${C.dim}   Notes: from CHANGELOG.md.${C.reset}`,
+  );
   process.exit(0);
 }
 

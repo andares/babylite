@@ -175,6 +175,7 @@ pnpm release patch                  # 1.0.1 → 1.0.2（也支持 minor / major�
 pnpm release patch --dry-run        # 只打印计划，不改任何东西（agent 可以跑）
 pnpm release patch --no-push        # 发布到 registry，但不 push、不建 GitHub Release
 pnpm gh-release v1.0.1              # 给已推送的 tag 补建 GitHub Release（幂等）
+pnpm gh-release v1.0.1 --update     # 重写已存在 Release 的 notes（取自 CHANGELOG.md 对应小节）
 pnpm tag-current                    # 仅给当前版本打本地 tag（已存在则跳过）
 ```
 
@@ -191,6 +192,11 @@ pnpm tag-current                    # 仅给当前版本打本地 tag（已存�
 
 **Release 缺失怎么补**：`pnpm gh-release vX.Y.Z`（`scripts/github-release.mjs`）是幂等的——已存在就跳过；tag 不在 `origin` 上则拒绝（否则 API 会拿默认分支 HEAD 新建一个 tag，把 Release 指到错提交）。
 典型来源：发布时没设 `GITHUB_TOKEN`，或版本早于这一步存在（`v1.0.1` 就是"有 tag、没有 Release"）。
+
+**Release notes 取自 `CHANGELOG.md`** 对应小节（同一段提交范围）；已存在的 Release 不动，
+要把它现有的 notes 重写成 changelog 内容就加 `--update`。
+不用 GitHub 自己的 `generate_release_notes`，是因为它只列已合并的 PR，而本仓库直接推 master——
+生成出来只有一行 compare 链接（`v1.1.0` / `v1.1.1` 就是这么诞生的，可用 `--update` 补好）。
 
 **Token 权限（漏掉就会 403）**：`GITHUB_TOKEN` 必须能**写** Release —— fine-grained token 要
 `Contents: Read and write`（Releases 属于 Contents 权限；只给读权限时仓库/读操作都能过，唯独写 Release 403），

@@ -151,13 +151,14 @@ pnpm release patch               # 1.0.1 → 1.0.2；也支持 minor / major
 pnpm release patch --dry-run     # 只打印计划
 pnpm release patch --no-push     # 发布但不 push / 不建 GitHub Release
 pnpm gh-release v1.0.1           # 给已推送的 tag 补建 GitHub Release（幂等）
+pnpm gh-release v1.0.1 --update  # 重写已存在 Release 的 notes（取自 CHANGELOG.md 对应小节）
 pnpm tag-current                 # 仅给当前版本打本地 tag（已存在则跳过）
 ```
 
 一条命令完成：push 预检（`git push --dry-run`，push 不通就在改任何东西之前停下）→ 校验 →
 bump `package.json` 与 `SKILL.md` 版本、在 `CHANGELOG.md` 顶部插入本版条目 → commit + tag →
-`pnpm publish` → push 分支与 tag → 建 GitHub Release。changelog 条目与 Release notes 是同一段范围
-（上一个 tag 之后的提交）。`GITHUB_TOKEN` 需要能**写** Release（fine-grained 要 `Contents: Read and write`，classic 要 `repo`）；
+`pnpm publish` → push 分支与 tag → 建 GitHub Release，notes 就是 `CHANGELOG.md` 里同一小节的内容
+（不用 GitHub 自带生成器：它只列已合并的 PR，而本仓库直接推 master）。`GITHUB_TOKEN` 需要能**写** Release（fine-grained 要 `Contents: Read and write`，classic 要 `repo`）；
 缺失或创建失败只警告（registry 已发布的版本不回退），事后用 `pnpm gh-release vX.Y.Z` 补建即可 —— 已存在则跳过。
 发布后 skills.sh 会随仓库同步。
 细节与回滚见 `AGENTS.md`。

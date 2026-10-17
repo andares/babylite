@@ -172,13 +172,14 @@ pnpm release patch               # 1.0.1 → 1.0.2; minor / major also work
 pnpm release patch --dry-run     # print the plan only
 pnpm release patch --no-push     # publish without pushing / creating a GitHub Release
 pnpm gh-release v1.0.1           # backfill the GitHub Release for an already-pushed tag
+pnpm gh-release v1.0.1 --update  # rewrite an existing Release's notes from CHANGELOG.md
 pnpm tag-current                 # tag the current version locally (skipped if the tag exists)
 ```
 
 One command does it all: push preflight (`git push --dry-run`, so a push that would fail stops the release before
 anything is changed) → verify → bump `package.json` + the `SKILL.md` version and prepend the `CHANGELOG.md` entry →
-commit + tag → `pnpm publish` → push branch and tag → create the GitHub Release. The changelog entry and the Release
-notes cover the same range: the commits since the previous tag. The token must be allowed to write Releases (fine-grained: `Contents: Read and write`; classic: `repo`). If
+commit + tag → `pnpm publish` → push branch and tag → create the GitHub Release, whose notes are the same
+`CHANGELOG.md` section (GitHub's own generator only lists merged pull requests, which this repo never uses). The token must be allowed to write Releases (fine-grained: `Contents: Read and write`; classic: `repo`). If
 `GITHUB_TOKEN` is missing or the Release call fails, the run only warns — the registry publish stands — and
 `pnpm gh-release vX.Y.Z` repairs it afterwards (idempotent: an existing Release is left alone). skills.sh picks the change up once the public repo is pushed.
 Details and rollback: `AGENTS.md`.
