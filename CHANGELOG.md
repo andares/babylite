@@ -4,6 +4,11 @@ Release history for `@andares/babylite`, newest first. `pnpm release <bump>`
 prepends the section for each release — the commit subjects since the previous
 tag — so this file and the GitHub Release always cover the same range.
 
+## [1.1.2] - 2026-10-17
+
+- Drop the release gates: the prohibition is a rule, not a lock
+- Take Release notes from the changelog instead of GitHub's generator
+
 ## [1.1.1] - 2026-10-17
 
 - Explain which permission a rejected token is missing
