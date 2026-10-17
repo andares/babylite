@@ -47,7 +47,8 @@ Babylon Lite 是 Babylon.js 的 WebGPU 原生渲染器，API 形态是**工厂�
 .
 ├── SKILL.md                  # skill 入口：触发描述 + 检索协议 + 高频陷阱（agent 实际读到的文件）
 ├── AGENTS.md                 # 本文件：项目说明与维护流程
-├── README.md                 # 面向人的介绍与安装方式
+├── README.md                 # 面向人的介绍与安装方式（**英文，默认展示的那一份**，见约定 13）
+├── README.zh-CN.md           # 同一份说明的中文版
 ├── LICENSE
 ├── package.json              # npm 包 @andares/babylite（发布与版本，见约定 8–9）
 ├── pnpm-lock.yaml            # pnpm 锁文件（本仓库只用 pnpm，见「包管理器」一节）
@@ -111,6 +112,9 @@ Babylon Lite 是 Babylon.js 的 WebGPU 原生渲染器，API 形态是**工厂�
    `scripts/` 与 `bin/` 之外不要新增需要随包分发的顶层目录而不更新 `files`。
 10. **安装器只做复制，不做别的**：`bin/babylite.mjs` 只往目标 skill 目录写 `SKILL.md` + `references/`，
     不得执行包内脚本、不得联网、不得越出目标目录；覆盖他人目录必须要求 `--force`。
+    目标是**符号链接**（或真实路径就是本源目录）时必须**直接拒绝**：软链本身就算一种安装
+    （通常是跟着 `git pull` 走的 checkout），写穿链接会改写——甚至删掉——链接背后的目录，
+    而指向本源时更会把正在复制的源删掉（2026-10-17 查明并修好）。
 11. **本仓库只用 pnpm**：不要引入 `package-lock.json`/`yarn.lock`，不要用 `npm run`/`npm publish` 跑本仓库流程；
     用户侧的 `npx ...` 安装说明不在此约束内。
 12. **推送与发布只能由人类执行**（本文件最重要的一条）：agent 不得运行 `git push`（含 `--tags`/`--force`）、
@@ -118,12 +122,16 @@ Babylon Lite 是 Babylon.js 的 WebGPU 原生渲染器，API 形态是**工厂�
     `pnpm unpublish`——包括在临时目录、副本、容器、worktree 里"为了验证"地跑。
     agent 做到**本地 commit** 为止，然后向人类报告并请求推送。
     细节见文首[「发布权」](#-发布权只能由仓库所有者人类执行)一节。
+13. **README 是一对**：`README.md` 是英文（默认，GitHub / npm 展示的那份），`README.zh-CN.md` 是中文版；
+    两版章节结构保持一致、改动同步更新，并在文首**互相链接**。
+    `verify-docs.mjs` 会检查两份都在且互链，防止其中一份悄悄腐化。
 
 ## 作为使用方（在被开发项目中）
 
 agent 被加载本 skill 后，按 SKILL.md 的检索协议走：`references/INDEX.md` → `references/topics/NN-*.md`
 → `references/raw-doc/**` → 项目内 `node_modules/@babylonjs/lite/**.d.ts`。
-核心提醒：**先在本 skill 内查，不要先联网**；Lite 用工厂函数，不要写 `@babylonjs/core` 的类式代码。
+核心提醒：**先在本 skill 内查，不要先联网**；只有在本地快照确实没有、或怀疑已随版本变更时，
+才按第 5 跳去官方最新文档 https://doc.babylonjs.com/lite/ ；Lite 用工厂函数，不要写 `@babylonjs/core` 的类式代码。
 
 ## 作为维护方（更新本仓库）
 
@@ -148,7 +156,8 @@ pnpm verify          # 等价 node scripts/verify-docs.mjs
 所有 topic 头部列出的 `references/raw-doc/**` 路径存在；全仓库 markdown 内部链接可解析；
 文档中不存在 `babylite/` 前缀或指向仓库外的相对路径；`raw-doc` 页数与 `_nav-index.md` 记录一致；
 `package.json` 存在且名称/版本/`files`/`bin` 与 skill 包一致（约定 8–10）；
-`packageManager` 固定 pnpm、`pnpm-lock.yaml` 存在且没有混入 npm/yarn 锁文件（约定 11）。
+`packageManager` 固定 pnpm、`pnpm-lock.yaml` 存在且没有混入 npm/yarn 锁文件（约定 11）；
+两份 README（`README.md` / `README.zh-CN.md`）都存在且互相链接（约定 13）。
 
 ### 发布与分发
 
@@ -195,6 +204,7 @@ skills.sh 注意点：
 - 改文档后必须重跑 `pnpm verify`，并人工抽查 3 个 topic 的链接可达。
 - 新增 API 事实必须同时在 `topics/` 与该主题的 `raw-doc` 源页中可查；只有 topics 有、raw-doc 没有的，视为待核实。
 - 不要在 `references/` 下新增二进制、图片或大规模冗余文件：skill 会在安装时整体复制。
+- 改 README 的内容时**两版一起改**，并确认文首互链仍在（约定 13；`pnpm verify` 会拦）。
 
 ## 来源与许可
 
