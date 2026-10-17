@@ -4,148 +4,183 @@
 [![npm](https://img.shields.io/npm/v/@andares/babylite.svg)](https://www.npmjs.com/package/@andares/babylite)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-一个 **agent skill**：把 [Babylon Lite](https://doc.babylonjs.com/lite/)（`@babylonjs/lite`）的官方文档做成**离线可查**的资料包。
-装了它之后，agent 在写基于 `@babylonjs/lite` 的项目时，可以直接在本地查到"这个效果该调哪个 API、参数怎么传、坑在哪"，
-**不需要联网检索，也不需要凭记忆猜签名**。
+**English** · [中文](README.zh-CN.md)
+
+An **agent skill** that packages the official [Babylon Lite](https://doc.babylonjs.com/lite/) (`@babylonjs/lite`)
+documentation as an **offline, greppable reference pack**. Once installed, an agent working on a `@babylonjs/lite`
+project can find locally *which API produces an effect, how its parameters are passed, and where the traps are* —
+**without web searching, and without guessing signatures from memory**.
 
 ```bash
-npx @andares/babylite install     # 推荐：装一次到共享目录 ~/.agents/skills/，Pi / DSH / Codex / Cursor… 都能发现
+npx @andares/babylite install     # recommended: one install in the shared ~/.agents/skills/, discovered by Pi / DSH / Codex / Cursor…
 ```
 
-## 为什么需要它
+## Why this exists
 
-`@babylonjs/lite` 是 Babylon.js 的 WebGPU 原生渲染器，API 形态是**工厂函数 + 纯数据实体**
-（`createEngine` / `createSceneContext` / `addToScene` / `registerScene` / `startEngine`），
-与 `@babylonjs/core` 的类式 API（`new Scene(engine)` / `new PBRMaterial()`）完全不同。
-模型对 Babylon.js 全量版的记忆在这里是**负资产**：写出来的类式代码在 Lite 里根本不存在，而模型对 Lite 的细节记忆又很少。
-本仓库用"离线快照 + 效果索引"补上这块，并顺手纠正类式 API 的惯性。
+`@babylonjs/lite` is the WebGPU-native renderer of Babylon.js, and its API is **factory functions + plain data
+entities** (`createEngine` / `createSceneContext` / `addToScene` / `registerScene` / `startEngine`) — nothing like
+the class-style API of `@babylonjs/core` (`new Scene(engine)` / `new PBRMaterial()`). A model's memory of full
+Babylon.js is an **active liability** here: the class-style code it produces does not exist in Lite, while its
+store of Lite specifics is thin. This repo closes that gap with an "offline snapshot + effect index", and
+corrects the class-style reflex along the way.
 
-## 内容
+## Contents
 
 ```text
-SKILL.md                      # skill 入口：检索协议 + 高频陷阱表
-AGENTS.md                     # 项目说明与维护流程
-package.json                  # npm 包 @andares/babylite（发布用，pnpm 管理）
-pnpm-lock.yaml                # pnpm 锁文件
-bin/babylite.mjs              # 安装器 CLI：把 skill 复制进 agent 的 skill 目录
+SKILL.md                      # skill entry point: retrieval protocol + high-frequency trap table
+AGENTS.md                     # project notes and maintenance workflow
+README.md                     # this file (English, default)
+README.zh-CN.md               # the same README in Chinese
+package.json                  # npm package @andares/babylite (release metadata, managed with pnpm)
+pnpm-lock.yaml                # pnpm lockfile
+bin/babylite.mjs              # installer CLI: copies the skill into an agent's skill directory
 references/
-├── INDEX.md                  # 第 1 跳：效果词（中/英）→ API 范围 + 主题文件 + 原文档 URL
-├── README.md                 # 速查使用说明、铁律、数据来源
-├── topics/                   # 第 2 跳：13 个主题（API 范围表 + 最小示例）
-└── raw-doc/                  # 第 3 跳：官方 61 页完整 markdown 快照（可 grep）
-scripts/verify-docs.mjs       # 链接、路径与发布包一致性校验
-scripts/publish.mjs           # 一键发布（校验 → bump → commit+tag → pnpm publish → push）
+├── INDEX.md                  # hop 1: effect keywords (EN/ZH) → API surface + topic file + upstream URL
+├── README.md                 # quick-reference rules, lookup protocol, data provenance
+├── topics/                   # hop 2: 13 topics (API surface tables + minimal examples)
+└── raw-doc/                  # hop 3: full markdown snapshot of all 61 official pages (greppable)
+scripts/verify-docs.mjs       # link, path and package consistency checks
+scripts/publish.mjs           # one-command release (verify → bump → commit+tag → pnpm publish → push)
 ```
 
-三层资料的分工：**`INDEX.md` 回答"用哪个 API"**，**`topics/` 回答"怎么写"**，
-**`raw-doc/` 回答"边界行为和完整选项是什么"**。
+The three layers divide the work: **`INDEX.md` answers "which API"**, **`topics/` answers "how do I write it"**,
+**`raw-doc/` answers "what are the edge cases and the full option lists"**.
 
-覆盖范围（13 个主题）：场景/引擎、相机与操控、灯光与阴影、模型与环境加载、PBR/标准材质、
-着色器与后处理、动画（骨骼/morph/VAT）、网格几何与数学、GPU 拾取、粒子/精灵/文字/音频、
-物理与 WebXR、无头渲染与性能工程、从 Babylon.js 迁移。
+Coverage (13 topics): engine/scene setup, cameras & controls, lights & shadows, asset and environment loading,
+PBR/standard materials, shaders & post-processing, animation (skeleton/morph/VAT), mesh geometry & math, GPU
+picking, particles/sprites/text/audio, physics & WebXR, headless rendering & performance engineering, and
+porting from Babylon.js.
 
-## 安装
+## Install
 
-本 skill 就是一个目录包（`SKILL.md` + `references/`）。**装一次到共享 skill 目录即可，不需要按 agent 分别安装、也不需要 `-a` 指定。**
+The skill is just a directory package (`SKILL.md` + `references/`). **Installing it once into the shared skill
+directory is enough — no per-agent installs, no `-a` flag.**
 
-### 推荐：装到共享目录
+### Recommended: the shared directory
 
 ```bash
-npx @andares/babylite install            # → ~/.agents/skills/babylite（所有项目可用）
-npx @andares/babylite install --project  # → ./.agents/skills/babylite（仅当前项目）
+npx @andares/babylite install            # → ~/.agents/skills/babylite (available to every project)
+npx @andares/babylite install --project  # → ./.agents/skills/babylite (this project only)
 ```
 
-> ⚠️ **别在 babylite 仓库目录里跑 `npx @andares/babylite …`**：包名与当前项目同名，npm 会把它解析成"本地这个包"而不是从 registry 下载，转而去 `./node_modules/.bin/babylite` 找可执行文件，而它并不存在，于是报 `sh: 1: babylite: not found`（`npx --package …` 也一样）。
-> 换到任意其它目录执行即可；若你就在本仓库里，直接 `node bin/babylite.mjs install`，或用下面的软链方式。
-> 该报错是 npm 的行为，与本包无关。
+> ⚠️ **Do not run `npx @andares/babylite …` from inside this repository**: the package name matches the local
+> project, so npm resolves it to *this* package instead of downloading from the registry, then looks for
+> `./node_modules/.bin/babylite`, which does not exist, and fails with `sh: 1: babylite: not found`
+> (`npx --package …` behaves the same). Run it from any other directory; if you are inside this repo, call
+> `node bin/babylite.mjs install` directly, or use the symlink approach below. That failure is npm's
+> behaviour, not this package's.
 
-`.agents/skills/` 是当前生态正在收敛的共享目录，装一次这些 agent 就能自动发现：
+`.agents/skills/` is the shared directory the ecosystem is converging on, so one install is discovered by:
 
-- **全局** `~/.agents/skills/`：Pi、DSH、Zed、Cline、Dexto、Kimi Code CLI、Loaf、Sarvam Code、Warp
-- **项目级** `.agents/skills/` 覆盖面更广，另有 Codex、Cursor、GitHub Copilot、Gemini CLI、OpenCode、Kilo Code、Antigravity、Droid 等（20+ 个 agent）
-- Pi 另外也接受 `~/.pi/agent/skills/` 与 `<项目>/.pi/skills/`，DSH 另外也接受 `~/.dsh/skills/`；一般不必用到
+- **Global** `~/.agents/skills/`: Pi, DSH, Zed, Cline, Dexto, Kimi Code CLI, Loaf, Sarvam Code, Warp
+- **Project-level** `.agents/skills/` reaches further: Codex, Cursor, GitHub Copilot, Gemini CLI, OpenCode, Kilo Code, Antigravity, Droid and more (20+ agents)
+- Pi additionally accepts `~/.pi/agent/skills/` and `<project>/.pi/skills/`; DSH additionally accepts `~/.dsh/skills/` — normally unnecessary
 
-安装器只往目标目录写 `SKILL.md` + `references/`，**不执行包内脚本、不联网**。目标是本 skill 的既有安装会原地更新；是别人的目录则拒绝，需 `--force`。
+The installer only writes `SKILL.md` + `references/` into the target directory: **it executes nothing from the
+package and touches no network.** An existing install of this skill is updated in place; a directory it did not
+create is refused unless you pass `--force`. A **symlinked target is always refused**, on purpose: a symlink
+already *is* an installation (usually a live git checkout), and copying through it would rewrite — or delete —
+whatever it points at.
 
-### 不在共享约定里的 agent
+### Agents outside the shared convention
 
-`skills` CLI 会**自动探测**你装了哪些 agent，并按各自专有目录铺软链——一份正本 + 多条软链，不是重复拷贝（`--copy` 才真拷贝）：
+The `skills` CLI **auto-detects** which agents you have, and lays down symlinks in their own directories — one
+canonical copy plus symlinks, not duplicate copies (`--copy` really copies):
 
 ```bash
-npx skills add andares/babylite        # 自动探测；交互确认装到哪些 agent
-npx skills add andares/babylite --all  # 所有 skill → 所有 agent，不提示
+npx skills add andares/babylite        # auto-detect; asks which agents to install for
+npx skills add andares/babylite --all  # every skill → every agent, no prompts
 ```
 
-Claude Code（`~/.claude/skills/`）等用它。DSH 不在该 CLI 的 agent 列表内，所以 DSH 走上一条命令或 `/skill install github:andares/babylite`。
+Use it for Claude Code (`~/.claude/skills/`) and similar. DSH is not in that CLI's agent list, so DSH uses the
+command above or `/skill install github:andares/babylite`.
 
-> ⚠️ 别用 `-g -a universal`：该 CLI 把 `universal` 的**全局**路径映射到 `~/.config/agents/skills/`，**不在共享约定上**，Pi 与 DSH 都不会读它。（它的项目级路径 `.agents/skills/` 才是对的。）
+> ⚠️ Do not use `-g -a universal`: that CLI maps `universal`'s **global** path to `~/.config/agents/skills/`,
+> which is **not** on the shared convention and is read by neither Pi nor DSH. (Its project-level path
+> `.agents/skills/` is the correct one.)
 
-### 手动安装 / 想固定版本
+### Manual install / pinning a version
 
 ```bash
 git clone git@github.com:andares/babylite.git ~/.agents/skills/babylite
 
-# 或从已有克隆软链过去，git pull 后即时生效
+# or symlink an existing clone; `git pull` then takes effect immediately
 ln -s /path/to/babylite ~/.agents/skills/babylite
 ```
 
-**在本仓库里改了文档想立刻生效，就用软链**（不必反复重装副本）；贡献者本地推荐这一种。
+**Editing the docs inside this repo and wanting it live right away? Use the symlink** (no repeated
+re-installs); that is what contributors use. Note that the installer refuses a symlinked target — the link
+itself is the installation, so run `git pull` in the linked directory instead of installing again.
 
-### 目录对照
+### Where skills are read from
 
-| 范围 | 路径 | 谁读 |
+| Scope | Path | Read by |
 | --- | --- | --- |
-| 全局（推荐） | `~/.agents/skills/babylite/` | Pi、DSH、Zed、Cline、Warp… |
-| 当前项目（推荐） | `<项目根>/.agents/skills/babylite/` | 上述 + Codex、Cursor、Copilot、Gemini CLI、OpenCode… |
-| DSH 专有 | `~/.dsh/skills/`、`<项目根>/.dsh/skills/` | 仅 DSH（一般不必用） |
-| 各 agent 专有 | `~/.claude/skills/`、`~/.cursor/skills/`… | 交给 `npx skills add` 自动处理 |
+| Global (recommended) | `~/.agents/skills/babylite/` | Pi, DSH, Zed, Cline, Warp… |
+| Current project (recommended) | `<project root>/.agents/skills/babylite/` | the above + Codex, Cursor, Copilot, Gemini CLI, OpenCode… |
+| DSH-specific | `~/.dsh/skills/`, `<project root>/.dsh/skills/` | DSH only (normally unnecessary) |
+| Agent-specific | `~/.claude/skills/`, `~/.cursor/skills/`… | let `npx skills add` handle it |
 
-安装后 skill 列表里应出现 `babylite`；没出现就刷新/重启会话（本 skill 是纯文档包，无需 `trust` 即可读取）。
+After installing, `babylite` should appear in the skill list; if it does not, refresh or restart the session
+(this is a pure documentation pack, so no `trust` step is needed to read it).
 
-## 使用
+## Usage
 
-装好后 agent 会在遇到 `@babylonjs/lite` 相关任务时自动加载本 skill 并按其检索协议查文档。
-如果你要手动确认内容——人或 agent 都可以直接读：
+Once installed, the agent loads this skill automatically for `@babylonjs/lite` tasks and follows its retrieval
+protocol. To inspect the content by hand — people and agents alike can read it directly:
 
 ```bash
-# 从"效果"找 API（中/英检索词都行）
-grep -n "大规模实例\|thin instance" references/INDEX.md
+# find an API from an effect (English or Chinese keywords)
+grep -n "thin instance\|大规模实例" references/INDEX.md
 
-# 直接看某个主题
+# read one topic
 sed -n '1,60p' references/topics/08-meshes-geometry.md
 
-# 在官方原文快照里全文检索（比速查更深）
+# full-text search the official snapshot (deeper than the distilled quick reference)
 grep -rn "setThinInstances" references/raw-doc/
 ```
 
-对被开发项目而言，**最权威的签名来源仍是项目内 `node_modules/@babylonjs/lite/**.d.ts`**——它与安装版本严格一致。
-本仓库的定位是"离线 + 快"，不是"权威"：判据优先级为 `node_modules` 源码 > `raw-doc` 快照 > `topics`/`INDEX` > 模型记忆。
+Inside the project that consumes it, **the most authoritative signature source is that project's
+`node_modules/@babylonjs/lite/**.d.ts`**, which matches the installed version exactly. This repo aims to be
+"offline and fast", not "authoritative": precedence is `node_modules` source > `raw-doc` snapshot >
+`topics`/`INDEX` > model memory.
 
-## 数据来源与时效
+## Snapshot freshness (is this up to date?)
 
-- 抓取源：<https://doc.babylonjs.com/lite/> 左侧菜单全部 **61 页**（另加 `_nav-index.md` 菜单索引）。
-- 抓取时间：**2026-08-29**；每个快照文件头部保留 `title` / `source`（原始 URL）/ `section`。
-- 与线上文档冲突时**以官方文档为准**；刷新流程见 `AGENTS.md`，改完跑 `node scripts/verify-docs.mjs` 校验。
-- 官方文档更新快于本快照，欢迎提 issue 提醒刷新。
+- Source: every page in the left-hand menu of <https://doc.babylonjs.com/lite/> — **61 pages** plus a
+  `_nav-index.md` menu index.
+- Captured: **2026-08-29**. Each file under `references/raw-doc/` keeps `title` / `source` (the original URL) /
+  `section` in its header, so a local file and its upstream page can always be cross-checked.
+- **The upstream docs move faster than the snapshot.** For anything newer, read the official site
+  <https://doc.babylonjs.com/lite/> — on conflict the official docs win. The skill's own protocol says the same
+  and lists when to leave the snapshot: the API is not found locally (added or renamed since the capture); the
+  project's installed `@babylonjs/lite` is newer than the snapshot; you need to know whether a capability is
+  supported *now*; or the user explicitly asks for the latest documentation.
+- Issues asking for a refresh are welcome; the refresh procedure and checks live in `AGENTS.md`.
 
-## 开发与发布（维护者）
+## Development & release (maintainers)
 
-本仓库**只用 pnpm** 管理自己的开发流程（`packageManager` 已固定，锁文件为 `pnpm-lock.yaml`）；
-包本身仍然发布到 npm registry。用户侧的安装命令与这里无关。
+This repository uses **pnpm only** for its own development workflow (its `packageManager` is pinned and the
+lockfile is `pnpm-lock.yaml`); the package itself is still published to the npm registry. The user-facing
+install commands above are unaffected by that.
 
 ```bash
-pnpm install                     # 无依赖，仅用于同步锁文件
-pnpm verify                      # 跑校验（等价 node scripts/verify-docs.mjs）
-pnpm release patch               # 1.0.0 → 1.0.1；也支持 minor / major
-pnpm release patch --dry-run     # 只打印计划
-pnpm release patch --no-push     # 发布但不 push / 不建 GitHub Release
-pnpm tag-current                 # 仅给当前版本打本地 tag
+pnpm install                     # no dependencies; keeps the lockfile in sync
+pnpm verify                      # run the checks (equivalent to node scripts/verify-docs.mjs)
+pnpm release patch               # 1.0.1 → 1.0.2; minor / major also work
+pnpm release patch --dry-run     # print the plan only
+pnpm release patch --no-push     # publish without pushing / creating a GitHub Release
+pnpm tag-current                 # tag the current version locally (skipped if the tag exists)
 ```
 
-一条命令完成：校验 → bump `package.json` 与 `SKILL.md` 版本 → commit + tag → `pnpm publish` →
-push 分支与 tag → 建 GitHub Release（需 `GITHUB_TOKEN`，缺省只提示）。发布后 skills.sh 会随仓库同步。
-细节与回滚见 `AGENTS.md`。
+One command does it all: verify → bump `package.json` and the `SKILL.md` version → commit + tag → `pnpm publish`
+→ push branch and tag → create a GitHub Release (`GITHUB_TOKEN`, warning only if absent). skills.sh picks the
+change up once the public repo is pushed. Details and rollback: `AGENTS.md`.
 
-## 许可
+> ⛔ Pushing and publishing are reserved for the repository owner. Agents may run `pnpm verify`, `pack --dry-run`
+> and `pnpm release --dry-run`, and may commit locally — nothing that changes public state.
 
-本仓库整理内容以 [MIT](LICENSE) 发布；文档原文版权归 Babylon.js 项目所有（其公开文档随 Babylon.js 以 Apache-2.0 发布）。
+## License
+
+The curated content of this repository is released under [MIT](LICENSE); the documentation text itself belongs
+to the Babylon.js project (its public docs ship with Babylon.js under Apache-2.0).

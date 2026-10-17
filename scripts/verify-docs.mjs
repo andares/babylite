@@ -15,6 +15,8 @@
  *  7. The published package stays consistent with the bundle: name, the version
  *     shared with `SKILL.md` metadata, `files` coverage, executable bins, and
  *     the pnpm-only toolchain (packageManager field + lockfile).
+ *  8. The README ships in both languages (README.md English, README.zh-CN.md
+ *     Chinese) and the two halves link to each other.
  *
  * Usage: node scripts/verify-docs.mjs
  */
@@ -232,6 +234,28 @@ if (!existsSync(pkgPath)) {
     if (existsSync(join(ROOT, 'package-lock.json')) || existsSync(join(ROOT, 'yarn.lock'))) {
       fail('package', 'a foreign lockfile (package-lock.json / yarn.lock) is present');
     }
+  }
+}
+
+// ------------------------------------------------- 8. bilingual README pair
+
+// The README is the front door for people, and it ships in two languages. A
+// missing half, or a half that no longer links to the other, is how the pair
+// silently drifts apart — so both are checked here rather than trusted.
+const README_PAIR = [
+  { file: 'README.md', other: 'README.zh-CN.md' },
+  { file: 'README.zh-CN.md', other: 'README.md' },
+];
+for (const { file, other } of README_PAIR) {
+  if (!existsSync(join(ROOT, file))) {
+    fail('readme', `${file} is missing (the README ships in both languages)`);
+    continue;
+  }
+  // Accept `](other)`, `](./other)` and anchors: `](./other#section)`.
+  const escaped = other.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const linked = new RegExp(`\\]\\(\\.?/?${escaped}(?:#[^)]*)?\\)`).test(loadMarkdown(file).raw);
+  if (!linked) {
+    fail('readme', `${file} does not link to ${other}`);
   }
 }
 
