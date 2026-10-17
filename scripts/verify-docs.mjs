@@ -17,6 +17,8 @@
  *     the pnpm-only toolchain (packageManager field + lockfile).
  *  8. The README ships in both languages (README.md English, README.zh-CN.md
  *     Chinese) and the two halves link to each other.
+ *  9. CHANGELOG.md exists and its newest version is the package version, so a
+ *     release cannot ship without its entry.
  *
  * Usage: node scripts/verify-docs.mjs
  */
@@ -256,6 +258,29 @@ for (const { file, other } of README_PAIR) {
   const linked = new RegExp(`\\]\\(\\.?/?${escaped}(?:#[^)]*)?\\)`).test(loadMarkdown(file).raw);
   if (!linked) {
     fail('readme', `${file} does not link to ${other}`);
+  }
+}
+
+// ------------------------------------------------- 9. changelog top entry
+
+// `pnpm release` prepends a CHANGELOG section for every version, so the top
+// entry must be the version being published — otherwise the release commit is
+// missing its history entry (and `prepublishOnly` runs this check, so the
+// publish would stop).
+let pkgVersion;
+try {
+  pkgVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
+} catch {
+  // check 7 already reports an unreadable package.json
+}
+if (!existsSync(join(ROOT, 'CHANGELOG.md'))) {
+  fail('changelog', 'CHANGELOG.md is missing (every release prepends a section)');
+} else {
+  const top = /^## \[(\d+\.\d+\.\d+)\]/m.exec(readFileSync(join(ROOT, 'CHANGELOG.md'), 'utf8'))?.[1];
+  if (top === undefined) {
+    fail('changelog', 'CHANGELOG.md has no `## [x.y.z]` section');
+  } else if (pkgVersion !== undefined && top !== pkgVersion) {
+    fail('changelog', `CHANGELOG.md tops out at ${top} but package.json is ${pkgVersion}`);
   }
 }
 

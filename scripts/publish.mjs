@@ -27,6 +27,8 @@
  *   validate args → warn on dirty git tree (non-blocking)
  *   → gate: `scripts/verify-docs.mjs` + tarball sanity check
  *   → bump package.json AND SKILL.md metadata.version (they must stay equal)
+ *     + prepend the release section to CHANGELOG.md (commit subjects since the
+ *     previous tag — the same range GitHub summarises for the Release)
  *   → git commit `chore: release vX.Y.Z` + tag `vX.Y.Z`
  *     (via scripts/tag-current.mjs — skips if the tag already exists)
  *   → `pnpm publish --no-git-checks` (`prepublishOnly` re-runs verify-docs as
@@ -56,7 +58,7 @@
  *    GITHUB_TOKEN 环境变量；创建失败不影响已发布的 npm 包。
  */
 import { spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { fileURLToPath } from 'node:url';
@@ -164,7 +166,7 @@ if (dryRun) {
       (skipPush ? `（--no-push：跳过）` : ''),
   );
   console.log(`  2. node scripts/verify-docs.mjs + pnpm pack --dry-run`);
-  console.log(`  3. bump package.json + SKILL.md metadata.version → ${next}`);
+  console.log(`  3. bump package.json + SKILL.md metadata.version + CHANGELOG.md → ${next}`);
   console.log(
     `  4. git commit -m "chore: release v${next}" + tag-current` +
       (tagExists(`v${next}`) ? `（tag v${next} 已存在，跳过打 tag）` : `（git tag v${next}）`),
@@ -302,7 +304,8 @@ if (pack.status !== 0 || packList === undefined) {
   console.log(`${C.dim}   tarball: ${packList.length} files${C.reset}`);
 }
 
-// 2. Bump package.json and SKILL.md metadata.version (kept equal by contract).
+// 2. Bump package.json and SKILL.md metadata.version (kept equal by contract),
+//    and prepend the CHANGELOG section for this release.
 step(`bump version → ${next}`);
 pkg.version = next;
 writeFileSync(PKG_PATH, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8');
@@ -315,9 +318,49 @@ if (!versionLine.test(skill)) {
 }
 writeFileSync(SKILL_PATH, skill.replace(versionLine, `$1"${next}"`), 'utf8');
 
+// The changelog section covers the same commit range GitHub summarises for the
+// Release: everything since the previous tag. It is written before the release
+// commit exists, so that commit cannot list itself.
+const changelogPath = join(ROOT, 'CHANGELOG.md');
+if (!existsSync(changelogPath)) {
+  console.error(`${C.red}CHANGELOG.md is missing (each release prepends a section).${C.reset}`);
+  process.exit(1);
+}
+let changelog = readFileSync(changelogPath, 'utf8');
+if (changelog.includes(`## [${next}]`)) {
+  console.warn(`${C.yellow}CHANGELOG.md already has a section for ${next} — left as is.${C.reset}`);
+} else {
+  const headingAt = changelog.search(/^## /m);
+  if (headingAt === -1) {
+    console.error(`${C.red}CHANGELOG.md has no \`## [x.y.z]\` section to prepend to.${C.reset}`);
+    process.exit(1);
+  }
+  const previous = run(git, ['describe', '--tags', '--abbrev=0'], {
+    stdio: 'pipe',
+    allowFailure: true,
+  });
+  const range = previous.status === 0 ? `${previous.stdout.toString().trim()}..HEAD` : 'HEAD';
+  const subjects = run(git, ['log', '--no-merges', '--pretty=format:%s', range], { stdio: 'pipe' })
+    .stdout.toString()
+    .trim()
+    .split('\n')
+    .filter(Boolean);
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+    now.getDate(),
+  ).padStart(2, '0')}`;
+  const bullets =
+    subjects.length > 0
+      ? subjects.map((s) => `- ${s}`).join('\n')
+      : '- (no commits since the previous tag)';
+  const entry = `## [${next}] - ${today}\n\n${bullets}\n`;
+  changelog = `${changelog.slice(0, headingAt)}${entry}\n${changelog.slice(headingAt)}`;
+  writeFileSync(changelogPath, changelog, 'utf8');
+}
+
 // 3. Commit, then tag the release commit via tag-current.mjs.
 step(`git commit + tag v${next}`);
-run(git, ['add', 'package.json', 'SKILL.md']);
+run(git, ['add', 'package.json', 'SKILL.md', 'CHANGELOG.md']);
 run(git, ['commit', '-m', `chore: release v${next}`]);
 run(process.execPath, [join(ROOT, 'scripts', 'tag-current.mjs')]);
 

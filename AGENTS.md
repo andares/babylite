@@ -49,6 +49,7 @@ Babylon Lite 是 Babylon.js 的 WebGPU 原生渲染器，API 形态是**工厂�
 ├── AGENTS.md                 # 本文件：项目说明与维护流程
 ├── README.md                 # 面向人的介绍与安装方式（**英文，默认展示的那一份**，见约定 13）
 ├── README.zh-CN.md           # 同一份说明的中文版
+├── CHANGELOG.md              # 版本变更记录（每个 release 自动 prepend 一节，见约定 14）
 ├── LICENSE
 ├── package.json              # npm 包 @andares/babylite（发布与版本，见约定 8–9）
 ├── pnpm-lock.yaml            # pnpm 锁文件（本仓库只用 pnpm，见「包管理器」一节）
@@ -126,6 +127,9 @@ Babylon Lite 是 Babylon.js 的 WebGPU 原生渲染器，API 形态是**工厂�
 13. **README 是一对**：`README.md` 是英文（默认，GitHub / npm 展示的那份），`README.zh-CN.md` 是中文版；
     两版章节结构保持一致、改动同步更新，并在文首**互相链接**。
     `verify-docs.mjs` 会检查两份都在且互链，防止其中一份悄悄腐化。
+14. **`CHANGELOG.md` 顶部版本 = `package.json` 版本**：每个 release 由 `publish.mjs` 在顶部插入一节
+    （自上个 tag 以来的提交主题，与 GitHub Release 同一段范围），不要手改历史条目；
+    `verify-docs.mjs` 会对照两处版本，因此 `prepublishOnly` 能把"漏写条目"的发布拦下来。
 
 ## 作为使用方（在被开发项目中）
 
@@ -158,7 +162,8 @@ pnpm verify          # 等价 node scripts/verify-docs.mjs
 文档中不存在 `babylite/` 前缀或指向仓库外的相对路径；`raw-doc` 页数与 `_nav-index.md` 记录一致；
 `package.json` 存在且名称/版本/`files`/`bin` 与 skill 包一致（约定 8–10）；
 `packageManager` 固定 pnpm、`pnpm-lock.yaml` 存在且没有混入 npm/yarn 锁文件（约定 11）；
-两份 README（`README.md` / `README.zh-CN.md`）都存在且互相链接（约定 13）。
+两份 README（`README.md` / `README.zh-CN.md`）都存在且互相链接（约定 13）；
+`CHANGELOG.md` 存在且顶部版本等于 `package.json` 版本（约定 14）。
 
 ### 发布与分发
 
@@ -175,7 +180,8 @@ pnpm tag-current                    # 仅给当前版本打本地 tag（已存�
 
 `scripts/publish.mjs` 的步骤：**push 预检**（`git push --dry-run`，不通就什么都不改）
 → 校验（`verify-docs.mjs` + `pnpm pack --dry-run --json` 检查 tarball 内容）
-→ 同时 bump `package.json` 与 `SKILL.md` 的 `metadata.version` → `chore: release vX.Y.Z` commit
+→ 同时 bump `package.json` 与 `SKILL.md` 的 `metadata.version`，并在 `CHANGELOG.md` 顶部插入本版条目
+（自上个 tag 以来的提交主题；与 Release notes 同一段范围）→ `chore: release vX.Y.Z` commit
 → `tag-current.mjs` 打 `vX.Y.Z` → `pnpm publish --no-git-checks`（`prepublishOnly` 会再跑一次校验）
 → 仅在发布成功后 push 分支与 tag，再调 `scripts/github-release.mjs` 建 GitHub Release
 （`GITHUB_TOKEN`，best-effort，失败只警告；notes 由 GitHub 按上一个 tag 之后的提交自动生成）。
