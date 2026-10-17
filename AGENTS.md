@@ -8,7 +8,7 @@
 >
 > 1. **推送**：`git push`（含 `--tags`、`--force`）、`git push --delete`、创建或删除远端 tag / 分支；
 > 2. **发布**：`pnpm release`、`pnpm publish`、`npm publish`、`pnpm unpublish`、`npm deprecate`；
-> 3. **GitHub Release**：创建、修改、删除。
+> 3. **GitHub Release**：创建、修改、删除（包括 `pnpm gh-release`）。
 >
 > **agent 可以做的**：`pnpm verify`、`pnpm pack --dry-run`、`pnpm release <bump> --dry-run`、
 > 修改版本号与文档、**本地 `git commit`**、本地打 tag（可选）。做完本地提交后停下，
@@ -63,7 +63,8 @@ Babylon Lite 是 Babylon.js 的 WebGPU 原生渲染器，API 形态是**工厂�
 │       └── architecture/NN-*.md
 └── scripts/
     ├── verify-docs.mjs       # 校验：链接、路径、包一致性
-    ├── publish.mjs           # 一键发布：校验 → bump → commit+tag → pnpm publish → push
+    ├── publish.mjs           # 一键发布：预检 → 校验 → bump → commit+tag → pnpm publish → push
+    ├── github-release.mjs    # 给已推送的 tag 建/补建 GitHub Release（幂等，notes 自动生成）
     └── tag-current.mjs       # 给当前版本打本地 tag（已存在则跳过）
 ```
 
@@ -118,7 +119,7 @@ Babylon Lite 是 Babylon.js 的 WebGPU 原生渲染器，API 形态是**工厂�
 11. **本仓库只用 pnpm**：不要引入 `package-lock.json`/`yarn.lock`，不要用 `npm run`/`npm publish` 跑本仓库流程；
     用户侧的 `npx ...` 安装说明不在此约束内。
 12. **推送与发布只能由人类执行**（本文件最重要的一条）：agent 不得运行 `git push`（含 `--tags`/`--force`）、
-    创建或删除远端 tag / GitHub Release，也不得运行 `pnpm release`、`pnpm publish`、`npm publish`、
+    创建或删除远端 tag / GitHub Release（含 `pnpm gh-release`），也不得运行 `pnpm release`、`pnpm publish`、`npm publish`、
     `pnpm unpublish`——包括在临时目录、副本、容器、worktree 里"为了验证"地跑。
     agent 做到**本地 commit** 为止，然后向人类报告并请求推送。
     细节见文首[「发布权」](#-发布权只能由仓库所有者人类执行)一节。
@@ -168,13 +169,27 @@ pnpm verify          # 等价 node scripts/verify-docs.mjs
 pnpm release patch                  # 1.0.1 → 1.0.2（也支持 minor / major）
 pnpm release patch --dry-run        # 只打印计划，不改任何东西（agent 可以跑）
 pnpm release patch --no-push        # 发布到 registry，但不 push、不建 GitHub Release
+pnpm gh-release v1.0.1              # 给已推送的 tag 补建 GitHub Release（幂等）
 pnpm tag-current                    # 仅给当前版本打本地 tag（已存在则跳过）
 ```
 
-`scripts/publish.mjs` 的步骤：校验（`verify-docs.mjs` + `pnpm pack --dry-run --json` 检查 tarball 内容）
+`scripts/publish.mjs` 的步骤：**push 预检**（`git push --dry-run`，不通就什么都不改）
+→ 校验（`verify-docs.mjs` + `pnpm pack --dry-run --json` 检查 tarball 内容）
 → 同时 bump `package.json` 与 `SKILL.md` 的 `metadata.version` → `chore: release vX.Y.Z` commit
 → `tag-current.mjs` 打 `vX.Y.Z` → `pnpm publish --no-git-checks`（`prepublishOnly` 会再跑一次校验）
-→ 仅在发布成功后 push 分支与 tag，并用 `GITHUB_TOKEN` 建 GitHub Release（best-effort，失败只警告）。
+→ 仅在发布成功后 push 分支与 tag，再调 `scripts/github-release.mjs` 建 GitHub Release
+（`GITHUB_TOKEN`，best-effort，失败只警告；notes 由 GitHub 按上一个 tag 之后的提交自动生成）。
+
+预检存在的理由：registry 写入发生在 push 之前，push 失败会把版本停在"npm 有、GitHub 没有"的状态，
+所以拿不到 push 权限、或远端已经领先时，要在改任何东西之前就停下来。
+
+**Release 缺失怎么补**：`pnpm gh-release vX.Y.Z`（`scripts/github-release.mjs`）是幂等的——
+已存在就跳过；tag 不在 `origin` 上则拒绝（否则 API 会拿默认分支 HEAD 新建一个 tag，把 Release 指到错提交）。
+典型来源：发布时没设 `GITHUB_TOKEN`，或版本早于这一步存在（`v1.0.1` 就是"有 tag、没有 Release"）。
+
+**在 agent / 管道 / 包装脚本里跑 `pnpm release` 会被直接拒绝**（非交互终端，见约定 12）：
+此时它**什么都没改**；请在自己的终端重跑，而不是先 `git push` 再 release——
+最后一步 push 本来就在脚本里，先推只会把"未发布"的提交放到默认分支上（skills.sh 读的正是默认分支）。
 
 发布失败回滚：`git tag -d vX.Y.Z && git reset --hard HEAD~1`。
 

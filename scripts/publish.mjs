@@ -31,8 +31,12 @@
  *     (via scripts/tag-current.mjs — skips if the tag already exists)
  *   → `pnpm publish --no-git-checks` (`prepublishOnly` re-runs verify-docs as
  *     the publish gate)
- *   → 仅在发布成功后：`git push origin <branch> --tags` + 用 GITHUB_TOKEN 创建
- *     GitHub Release（best-effort；未设 token / 已存在 / 失败都只警告不中止）。
+ *   → 仅在发布成功后：`git push origin <branch> --tags` + `scripts/github-release.mjs`
+ *     创建 GitHub Release（best-effort；未设 token / 已存在 / 失败都只警告不中止，
+ *     事后可用 `pnpm gh-release vX.Y.Z` 补建）。
+ *
+ * 发布前会先 `git push --dry-run`：registry 写入发生在 push 之前，push 失败会把
+ * 版本停在"npm 有、GitHub 没有"的状态，所以这个问题必须在改任何东西之前暴露。
  *
  * Why both a registry release and a git push: the registry keeps the versioned
  * artifact, while skills.sh indexes the **public GitHub repository** and needs
@@ -61,7 +65,6 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PKG_PATH = join(ROOT, 'package.json');
 const SKILL_PATH = join(ROOT, 'SKILL.md');
 const BUMPS = ['major', 'minor', 'patch'];
-const curl = process.platform === 'win32' ? 'curl.exe' : 'curl';
 
 const C = {
   reset: '\x1b[0m',
@@ -156,19 +159,25 @@ const branch =
 
 if (dryRun) {
   console.log(`\n${C.dim}--dry-run -- nothing changed. Would run:${C.reset}`);
-  console.log(`  1. node scripts/verify-docs.mjs + pnpm pack --dry-run`);
-  console.log(`  2. bump package.json + SKILL.md metadata.version → ${next}`);
   console.log(
-    `  3. git commit -m "chore: release v${next}" + tag-current` +
+    `  1. push preflight: git push --dry-run origin ${branch} --tags` +
+      (skipPush ? `（--no-push：跳过）` : ''),
+  );
+  console.log(`  2. node scripts/verify-docs.mjs + pnpm pack --dry-run`);
+  console.log(`  3. bump package.json + SKILL.md metadata.version → ${next}`);
+  console.log(
+    `  4. git commit -m "chore: release v${next}" + tag-current` +
       (tagExists(`v${next}`) ? `（tag v${next} 已存在，跳过打 tag）` : `（git tag v${next}）`),
   );
-  console.log(`  4. pnpm publish --no-git-checks`);
+  console.log(`  5. pnpm publish --no-git-checks`);
   if (skipPush) {
-    console.log(`  5. --no-push：跳过 git push 与 GitHub Release`);
+    console.log(`  6. --no-push：跳过 git push 与 GitHub Release`);
   } else {
     console.log(
-      `  5. git push origin ${branch} --tags + GitHub Release v${next}` +
-        (process.env.GITHUB_TOKEN ? '' : `（未设置 GITHUB_TOKEN → 仅 push，Release 跳过）`),
+      `  6. git push origin ${branch} --tags + GitHub Release v${next}` +
+        (process.env.GITHUB_TOKEN
+          ? `（scripts/github-release.mjs，generate_release_notes）`
+          : `（未设置 GITHUB_TOKEN → 仅 push，Release 跳过；稍后可 pnpm gh-release v${next} 补建）`),
     );
   }
   process.exit(0);
@@ -212,8 +221,11 @@ if (!envConfirmed && !assumeYes) {
   if (process.stdin.isTTY !== true) {
     console.error(
       `${C.red}Refusing to publish: no interactive terminal.${C.reset}` +
-        `\n  Releasing is reserved for the repository owner (see AGENTS.md).` +
-        `\n  If you are human and really mean to script this, set BABYLITE_RELEASE_CONFIRM=1.`,
+        `\n  The registry cannot un-publish, so a release needs a human at a real terminal —` +
+        `\n  running this through an agent, a pipe or a wrapper script lands here.` +
+        `\n  Nothing has been bumped, tagged or published.` +
+        `\n  Re-run it in your own shell; or, to script it deliberately, set` +
+        `\n  BABYLITE_RELEASE_CONFIRM=1 (a human-only decision — see AGENTS.md).`,
     );
     process.exit(1);
   }
@@ -226,6 +238,27 @@ if (!envConfirmed && !assumeYes) {
     console.log(`${C.yellow}Aborted — nothing changed.${C.reset}`);
     process.exit(1);
   }
+}
+
+// The registry write happens before the git push, so a push that cannot succeed
+// would strand the version on npm with no tag and no Release on GitHub. The
+// release commit does not exist yet, but credentials, non-fast-forward and tag
+// conflicts are decided by the remote — so ask it now, while nothing is final.
+if (!skipPush) {
+  const dry = run(git, ['push', '--dry-run', 'origin', branch, '--tags'], {
+    stdio: 'pipe',
+    allowFailure: true,
+  });
+  if (dry.status !== 0) {
+    console.error(
+      `${C.red}Refusing to publish: \`git push origin ${branch} --tags\` would fail.${C.reset}` +
+        `\n  Resolve that first (upstream moved on, credentials, protected branch).` +
+        `\n  Nothing has been bumped, tagged or published.` +
+        `\n${`${dry.stdout}${dry.stderr}`.trim().split('\n').join('\n  ')}`,
+    );
+    process.exit(1);
+  }
+  console.log(`${C.dim}   push preflight: origin/${branch} reachable, fast-forward${C.reset}`);
 }
 
 // Dirty-tree warning (non-blocking; the release commit stages its own files).
@@ -314,68 +347,25 @@ if (skipPush) {
         `若远端还没有 tag v${next}，Release 将无法指向 release commit，skills.sh 也看不到新版本。${C.reset}`,
     );
   }
+  // The Release itself lives in scripts/github-release.mjs — the same helper
+  // `pnpm gh-release <tag>` runs. `--yes` is passed because the human gate above
+  // has already been cleared, so the helper must not ask a second time.
   if (!process.env.GITHUB_TOKEN) {
     console.warn(
       `${C.yellow}未设置 GITHUB_TOKEN — 跳过 GitHub Release 创建。` +
-        `npm registry 已发布 v${next}，可稍后手动创建 release。${C.reset}`,
+        `npm registry 已发布 v${next}，稍后可补建：pnpm gh-release v${next}${C.reset}`,
     );
   } else {
     const rel = run(
-      curl,
-      [
-        '-sS',
-        '-X',
-        'POST',
-        '-H',
-        'Accept: application/vnd.github+json',
-        '-H',
-        'X-GitHub-Api-Version: 2022-11-28',
-        '-H',
-        `Authorization: Bearer ${process.env.GITHUB_TOKEN}`,
-        '-w',
-        '\n%{http_code}',
-        '-d',
-        JSON.stringify({
-          tag_name: `v${next}`,
-          name: `v${next}`,
-          generate_release_notes: true,
-        }),
-        `https://api.github.com/repos/${ghRepo}/releases`,
-      ],
-      { allowFailure: true, stdio: 'pipe' },
+      process.execPath,
+      [join(ROOT, 'scripts', 'github-release.mjs'), `v${next}`, '--yes'],
+      { allowFailure: true },
     );
-    const lines = rel.stdout.toString().trimEnd().split('\n');
-    const code = lines.pop()?.trim() ?? '';
-    if (rel.status === 0 && code === '201') {
-      console.log(`${C.green}GitHub Release v${next} 创建成功${C.reset}`);
-    } else {
-      // POST 失败后查询确认——release 可能已存在（并发/重试/手动补建），
-      // 幂等处理：查询返回 200 即视为成功，不再重复创建。
-      const chk = run(
-        curl,
-        [
-          '-sS',
-          '-o',
-          '/dev/null',
-          '-w',
-          '%{http_code}',
-          '-H',
-          `Authorization: Bearer ${process.env.GITHUB_TOKEN}`,
-          `https://api.github.com/repos/${ghRepo}/releases/tags/v${next}`,
-        ],
-        { allowFailure: true, stdio: 'pipe' },
+    if (rel.status !== 0) {
+      console.warn(
+        `${C.yellow}GitHub Release v${next} 未创建成功（npm registry 已发布该版本），` +
+          `可重试：pnpm gh-release v${next}${C.reset}`,
       );
-      const chkCode = chk.stdout.toString().trim();
-      if (chkCode === '200') {
-        console.warn(
-          `${C.yellow}POST 返回 HTTP ${code || '?'}，但查询确认 Release v${next} 已存在，跳过（不重复创建）${C.reset}`,
-        );
-      } else {
-        console.warn(
-          `${C.yellow}GitHub Release 创建失败（POST HTTP ${code || '?'}，按 tag 查询 ${chkCode || '?'}）。` +
-            `npm registry 已发布 v${next}，可稍后手动创建。${C.reset}`,
-        );
-      }
     }
   }
 }

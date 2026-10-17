@@ -149,12 +149,19 @@ pnpm verify                      # 跑校验（等价 node scripts/verify-docs.m
 pnpm release patch               # 1.0.1 → 1.0.2；也支持 minor / major
 pnpm release patch --dry-run     # 只打印计划
 pnpm release patch --no-push     # 发布但不 push / 不建 GitHub Release
+pnpm gh-release v1.0.1           # 给已推送的 tag 补建 GitHub Release（幂等）
 pnpm tag-current                 # 仅给当前版本打本地 tag（已存在则跳过）
 ```
 
-一条命令完成：校验 → bump `package.json` 与 `SKILL.md` 版本 → commit + tag → `pnpm publish` →
-push 分支与 tag → 建 GitHub Release（需 `GITHUB_TOKEN`，缺省只提示）。发布后 skills.sh 会随仓库同步。
-细节与回滚见 `AGENTS.md`。
+一条命令完成：push 预检（`git push --dry-run`，push 不通就在改任何东西之前停下）→ 校验 →
+bump `package.json` 与 `SKILL.md` 版本 → commit + tag → `pnpm publish` → push 分支与 tag → 建 GitHub Release。
+Release notes 由 GitHub 按上一个 tag 之后的提交自动生成；`GITHUB_TOKEN` 缺失或创建失败只警告
+（registry 已发布的版本不回退），事后用 `pnpm gh-release vX.Y.Z` 补建即可 —— 已存在则跳过。
+发布后 skills.sh 会随仓库同步。细节与回滚见 `AGENTS.md`。
+
+请在**自己的终端**里跑发布：它需要一个真正的 TTY，在 agent / 管道 / 包装脚本里会在
+"什么都还没 bump、没打 tag、没发布"的状态下直接拒绝。脚本自己会 push 分支与 tag，
+所以 `git push && pnpm release patch` 不是正确的流程 —— 只跑 release 就够了。
 
 > ⛔ 推送与发布是仓库所有者的专属操作。agent 可以跑 `pnpm verify`、`pack --dry-run`、`pnpm release --dry-run`，
 > 也可以本地 commit——但不得改动公开状态（`git push`、`pnpm publish`、GitHub Release 等）。

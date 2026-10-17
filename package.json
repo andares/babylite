@@ -47,6 +47,7 @@
     "verify": "node ./scripts/verify-docs.mjs",
     "prepublishOnly": "node ./scripts/verify-docs.mjs",
     "release": "node ./scripts/publish.mjs",
+    "gh-release": "node ./scripts/github-release.mjs",
     "tag-current": "node ./scripts/tag-current.mjs"
   }
 }
