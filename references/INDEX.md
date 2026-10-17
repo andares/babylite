@@ -5,6 +5,11 @@
 > 表格按主题分组，行内"主题文件"即第 2 跳入口；
 > 主题文件顶部还列出该主题的**原文快照**（`references/raw-doc/**`，第 3 跳，可 grep）。
 > 本索引里的路径相对 skill base directory 或本文件所在目录（Markdown 链接）。
+>
+> **时效**：本索引与 `references/raw-doc/**` 快照都是**离线快照**（抓取日期见 `SKILL.md` 的
+> `metadata.docs-snapshot`），必然落后于线上。**先本地后线上**：查不到某 API、或项目里的
+> `@babylonjs/lite` 比快照新时，去官方最新文档 <https://doc.babylonjs.com/lite/>（对应页面 URL 见每行末列）；
+> 冲突时以**官方文档**与项目内 `node_modules/@babylonjs/lite/**.d.ts` 为准。
 
 ## 01 · 场景搭建与渲染循环
 

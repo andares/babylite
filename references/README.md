@@ -20,7 +20,14 @@
    本地源码与当前安装版本严格一致，比任何网络 API 文档都准确。
 4. 速查不给"完整 API 签名表"——只给效果 → API 范围（函数名 + 关键参数 + 注意点）。
    要精确签名请用第 3 条。
-5. 速查与本目录的原文快照均抓取于 2026-08-29；与最新官方文档冲突时以官方文档为准。
+5. 速查与原文快照是**离线快照**（抓取于 2026-08-29，官方 61 页），必然落后于线上；冲突时**以官方文档为准**。
+   **先本地后线上**，只有下面任一条件成立时才去官方最新文档 <https://doc.babylonjs.com/lite/>
+   （或本主题对应页面的 URL）核对：
+   - 本地速查/快照里**查不到**该 API（可能是快照之后新增或改名）；
+   - 项目安装的 `@babylonjs/lite` **比快照新**，签名或用起来的行为对不上；
+   - 要判断"这个能力**现在**支不支持"（功能差距表会随版本变）；
+   - 用户**明确要求最新文档**。
+   确认本地已过期后，按仓库根 `AGENTS.md` 的刷新流程更新快照。
 
 ## 路径约定
 
@@ -39,6 +46,7 @@ Markdown 链接（如 INDEX.md 里的 `topics/01-scene-setup.md`）按 Markdown 
 - **第 1 跳**：`references/INDEX.md` — 效果检索词（中/英）→ 关键 API 范围 + 主题文件 + 原文档 URL
 - **第 2 跳**：`references/topics/NN-*.md` — 主题详情：API 范围表、最小示例、相关效果与链接
 - **第 3 跳**：`references/raw-doc/**` — 主题文件顶部列出的"源页快照"，含完整示例与源码级细节，适合 grep
+- **跳出本地（需联网）**：官方在线文档 <https://doc.babylonjs.com/lite/> — 仅在上面第 5 条的触发条件下使用
 - **精确签名**：被开发项目的 `node_modules/@babylonjs/lite/**.d.ts`
 - **判据优先级**：`node_modules` 源码 > 本地快照（`raw-doc`）> 速查蒸馏（`INDEX` / `topics`）> 记忆
 
@@ -49,7 +57,8 @@ Markdown 链接（如 INDEX.md 里的 `topics/01-scene-setup.md`）按 Markdown 
 我要实现「<效果描述>」。请先查 <skill-base>/references/INDEX.md 定位该效果的 API 范围与文档链接，
 必要时读 <skill-base>/references/topics/ 下对应主题文件看最小示例，
 更深细节 grep <skill-base>/references/raw-doc/；
-若 API 细节仍不明确，请直接读取 node_modules/@babylonjs/lite 的 .d.ts 源码确认签名。
+若 API 细节仍不明确，请直接读取 node_modules/@babylonjs/lite 的 .d.ts 源码确认签名；
+只有本地快照确实查不到、或怀疑它已随版本过时，才去官方最新文档 https://doc.babylonjs.com/lite/ 核对。
 ```
 
 ## 数据说明与更新
